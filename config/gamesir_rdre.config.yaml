@@ -1,0 +1,50 @@
+teleop_twist_joy_node:
+  ros__parameters:
+    arm:
+      axis_linear:  # Left thumb stick vertical
+        x: 1
+        y: 0
+        z: 4
+      scale_linear:
+        x: 0.7
+        y: 0.7
+        z: 0.7
+      scale_linear_turbo:
+        x: 1.5
+        y: 1.5
+        z: 1.5
+      axis_angular:  # Left thumb stick horizontal
+        yaw: 0
+        pitch: 1
+        roll: 3
+      scale_angular:
+        yaw: 0.4
+        pitch: 0.4
+        roll: 0.4
+      gripper:
+        close: 2
+        open: 5
+      joystick_button:
+        A: 8
+        B: 9
+      pose_preset_button:
+        home: 1
+        retract: 0
+      toggleCartAdmittance: 2
+      toggleNullAdmittance: 3
+
+    base:
+      axis_linear:  # Left thumb stick vertical
+        x: 1
+      scale_linear:
+        x: 0.7
+      scale_linear_turbo:
+        x: 1.5
+      axis_angular:  # Left thumb stick horizontal
+        yaw: 0
+      scale_angular:
+        yaw: 0.4
+
+    jog_arm_button: 10  # X button. Button idex start from 1 for some reason.
+    deactivate_estop_button: 4  # Left trigger button
+    activate_estop_button: 5  # Right trigger button
