@@ -65,7 +65,8 @@ namespace teleop_twist_joy
     std::vector<int> joy_msg_buttons_prev = std::vector<int>(12, 0);
 
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_arm_pub;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_base_pub;
 
     int64_t activate_estop_button;
     int64_t deactivate_estop_button;
@@ -115,7 +116,8 @@ namespace teleop_twist_joy
 
     pimpl_->parent = this;
 
-    pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+    pimpl_->cmd_vel_arm_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel_arm", 10);
+    pimpl_->cmd_vel_base_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel_base", 10);
     pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
                                                                        std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
 
@@ -227,7 +229,7 @@ namespace teleop_twist_joy
     auto param_callback =
         [this](std::vector<rclcpp::Parameter> parameters)
     {
-      RCLCPP_INFO(this->get_logger(), "Beginning of param callback!");
+      // RCLCPP_INFO(this->get_logger(), "Beginning of param callback!");
       static std::set<std::string> intparams = {"arm_axis_linear.x", "arm_axis_linear.y", "arm_axis_linear.z",
                                                 "arm_axis_angular.yaw", "arm_axis_angular.pitch", "arm_axis_angular.roll",
                                                 "arm_pose_preset_button.home", "arm_pose_preset_button.retract",
@@ -490,6 +492,7 @@ namespace teleop_twist_joy
   {
     // Initializes with zeros by default.
     auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+    // auto zero_cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
   if (arm_jogged)
   {
     if (joy_msg->buttons[XYTwist_toggle] > 0)
@@ -511,20 +514,26 @@ namespace teleop_twist_joy
     {
       cmd_vel_msg->linear.z = getVal(joy_msg, arm.axis_linear_map, arm.scale_linear_map[which_map], "z");
     }
+
+    cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
+    // cmd_vel_base_pub->publish(std::move(zero_cmd_vel_msg));
+
   }
   else
   {
-      cmd_vel_msg->angular.z = getVal(joy_msg, base.axis_angular_map, base.scale_angular_map[which_map], "yaw");
-      cmd_vel_msg->angular.y = getVal(joy_msg, base.axis_angular_map, base.scale_angular_map[which_map], "pitch");
-      cmd_vel_msg->angular.x = getVal(joy_msg, base.axis_angular_map, base.scale_angular_map[which_map], "roll");
+    cmd_vel_msg->angular.z = getVal(joy_msg, base.axis_angular_map, base.scale_angular_map[which_map], "yaw");
+    cmd_vel_msg->angular.y = getVal(joy_msg, base.axis_angular_map, base.scale_angular_map[which_map], "pitch");
+    cmd_vel_msg->angular.x = getVal(joy_msg, base.axis_angular_map, base.scale_angular_map[which_map], "roll");
+  
+    cmd_vel_msg->linear.x = getVal(joy_msg, base.axis_linear_map, base.scale_linear_map[which_map], "x");
+    cmd_vel_msg->linear.y = getVal(joy_msg, base.axis_linear_map, base.scale_linear_map[which_map], "y");
+    cmd_vel_msg->linear.z = getVal(joy_msg, base.axis_linear_map, base.scale_linear_map[which_map], "z");
     
-      cmd_vel_msg->linear.x = getVal(joy_msg, base.axis_linear_map, base.scale_linear_map[which_map], "x");
-      cmd_vel_msg->linear.y = getVal(joy_msg, base.axis_linear_map, base.scale_linear_map[which_map], "y");
-      cmd_vel_msg->linear.z = getVal(joy_msg, base.axis_linear_map, base.scale_linear_map[which_map], "z");
+    cmd_vel_base_pub->publish(std::move(cmd_vel_msg));
+    // cmd_vel_arm_pub->publish(std::move(zero_cmd_vel_msg));
+
   }
     
-
-    cmd_vel_pub->publish(std::move(cmd_vel_msg));
     sent_disable_msg = false;
   }
 
@@ -577,9 +586,11 @@ namespace teleop_twist_joy
     {
       toggleJogDevice();
 
-      // Initializes with zeros by default.
+      // Initializes with zeros by default to stop the arm and base.
       auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_vel_pub->publish(std::move(cmd_vel_msg));
+      auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
+      cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
     }
 
     if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
@@ -593,7 +604,9 @@ namespace teleop_twist_joy
       {
         // Initializes with zeros by default.
         auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-        cmd_vel_pub->publish(std::move(cmd_vel_msg));
+        auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
+        cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
+        cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
         sent_disable_msg = true;
       }
       toggleEmergencyStop(sent_disable_msg);
