@@ -13,9 +13,9 @@ teleop_twist_joy_node:
       pitch: 1
       roll: 0
     arm_scale_angular:
-      yaw: -0.4
-      pitch: 0.4
-      roll: -0.4
+      yaw: -30
+      pitch: 30
+      roll: -30
     arm_gripper: 
       close: 2 # Left trigger
       open: 5 # Right trigger
@@ -40,7 +40,13 @@ teleop_twist_joy_node:
         pitch: 0.0
         roll: 0.0
       twist_door_handle:
-      
+        x: 0.0
+        y: 0.0
+        z: 0.0
+        yaw: 0.0
+        pitch: 0.0
+        roll: 0.0
+
     base_axis_linear:  # Left thumb stick vertical
       x: 1
     base_scale_linear:
