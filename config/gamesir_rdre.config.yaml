@@ -13,9 +13,9 @@ teleop_twist_joy_node:
       pitch: 1
       roll: 0
     arm_scale_angular:
-      yaw: -30
-      pitch: 30
-      roll: -30
+      yaw: -30.0
+      pitch: 30.0
+      roll: -30.0
     arm_gripper: 
       close: 2 # Left trigger
       open: 5 # Right trigger
@@ -59,6 +59,6 @@ teleop_twist_joy_node:
     XYTwist_toggle: 8 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
     ZTwist_toggle: 9 # Right joystick button to switch between controlling translation and rotation in the Z axes
       
-    jog_arm_button: 10  # X button. Button idex start from 1 for some reason.
+    jog_arm_button: 10  # home button. 
     deactivate_estop_button: 4  # Left bumper button
     activate_estop_button: 5  # Right bumper button

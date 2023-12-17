@@ -22,6 +22,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCL
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <future>
 #include <cinttypes>
 #include <functional>
 #include <map>
@@ -34,6 +35,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <rclcpp_components/register_node_macro.hpp>
 #include <rcutils/logging_macros.h>
 #include <sensor_msgs/msg/joy.hpp>
+
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
 
@@ -60,13 +62,27 @@ namespace teleop_twist_joy
     void toggleJogDevice();
     void toggleEmergencyStop(bool paramState);
 
+
+    void feedback_callback(GoalHandleGripper::SharedPtr,
+                      const std::shared_ptr<const Gripper::Feedback> feedback);
+    void result_callback(const GoalHandleGripper::WrappedResult & result);
+    void goal_response_callback(const GoalHandleGripper::SharedPtr & goal_handle);
+    void send_goal(control_msgs::msg::GripperCommand::SharedPtr goal_msg);
+
+
+
+
     // Variable to store the previous state of joystick buttons to register button state change instead in <joyCallback>.
     // #TODO: GEt first msg from topic and assign it to this vector object
+    std::vector<int> joy_msg_axes_prev = std::vector<int>(8, 0);
     std::vector<int> joy_msg_buttons_prev = std::vector<int>(12, 0);
 
     rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_arm_pub;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_base_pub;
+
+    rclcpp_action::Client<Gripper>::SharedPtr gripper_client_ptr_;
+
 
     int64_t activate_estop_button;
     int64_t deactivate_estop_button;
@@ -77,6 +93,7 @@ namespace teleop_twist_joy
 
     int64_t XYTwist_toggle; // Left joystick button to switch between controlling translation and rotation in the X and Y axes
     int64_t ZTwist_toggle;  // Right joystick button to switch between controlling translation and rotation in the Z axes
+
 
     struct
     {
@@ -105,6 +122,8 @@ namespace teleop_twist_joy
     } arm;
 
     bool sent_disable_msg;
+    bool running_gripper_cmd;
+    double gripper_pos;
   };
 
   /**
@@ -120,6 +139,8 @@ namespace teleop_twist_joy
     pimpl_->cmd_vel_base_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel_base", 10);
     pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
                                                                        std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
+
+    pimpl_->gripper_client_ptr_ = rclcpp_action::create_client<Gripper>(this, "/robotiq_gripper_controller/gripper_cmd");
 
     pimpl_->estop_activated = this->declare_parameter("estop_activated", false);
     pimpl_->deactivate_estop_button = this->declare_parameter("deactivate_estop_button", 4);
@@ -202,9 +223,9 @@ namespace teleop_twist_joy
     this->get_parameters("arm_pose_presets.retract", pimpl_->arm.pose_presets_map["retract"]);
 
     ROS_INFO_COND_NAMED(pimpl_->activate_estop_button >= 0, "TeleopTwistJoy",
-                        "Default button to Activate ESTOP [Right Trigger Button] %" PRId64 ".", pimpl_->activate_estop_button);
+                        "Default button to Activate ESTOP [Right Bumper] %" PRId64 ".", pimpl_->activate_estop_button);
     ROS_INFO_COND_NAMED(pimpl_->deactivate_estop_button >= 0, "TeleopTwistJoy",
-                        "Default button to Deactivate ESTOP [Left Trigger Button] %" PRId64 ".", pimpl_->deactivate_estop_button);
+                        "Default button to Deactivate ESTOP [Left Bumper] %" PRId64 ".", pimpl_->deactivate_estop_button);
 
     for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_linear_map.begin();
          it != pimpl_->arm.axis_linear_map.end(); ++it)
@@ -225,6 +246,7 @@ namespace teleop_twist_joy
     }
         
     pimpl_->sent_disable_msg = false;
+    pimpl_->running_gripper_cmd = false;
 
     auto param_callback =
         [this](std::vector<rclcpp::Parameter> parameters)
@@ -487,6 +509,86 @@ namespace teleop_twist_joy
     return joy_msg->axes[axis_map.at(fieldname)] * scale_map.at(fieldname);
   }
 
+
+  void TeleopTwistJoy::Impl::send_goal(control_msgs::msg::GripperCommand::SharedPtr goal_msg)
+  {
+    if (!gripper_client_ptr_->wait_for_action_server()) {
+      RCLCPP_ERROR(parent->get_logger(), "Action server not available after waiting");
+      rclcpp::shutdown();
+    }
+
+    auto goal_action = Gripper::Goal();
+    goal_action.command = *goal_msg;
+
+    // RCLCPP_INFO(parent->get_logger(), "Sending goal");
+
+    auto send_goal_options = rclcpp_action::Client<Gripper>::SendGoalOptions();
+    send_goal_options.goal_response_callback =
+      std::bind(&TeleopTwistJoy::Impl::goal_response_callback, this, std::placeholders::_1);
+    send_goal_options.feedback_callback =
+      std::bind(&TeleopTwistJoy::Impl::feedback_callback, this, std::placeholders::_1, std::placeholders::_2);
+    send_goal_options.result_callback =
+      std::bind(&TeleopTwistJoy::Impl::result_callback, this, std::placeholders::_1);
+
+    gripper_client_ptr_->async_send_goal(goal_action, send_goal_options);
+    
+    running_gripper_cmd = true;
+    // RCLCPP_INFO(parent->get_logger(), "Running Gripper cmd = %s", running_gripper_cmd ? "True" : "False");
+  }
+
+  void TeleopTwistJoy::Impl::goal_response_callback(const GoalHandleGripper::SharedPtr & goal_handle)
+  {
+    if (!goal_handle) {
+      RCLCPP_ERROR(parent->get_logger(), "Goal was rejected by server");
+    } else {
+      // RCLCPP_INFO(parent->get_logger(), "Goal accepted by server, waiting for result");
+    }
+  }
+
+  void TeleopTwistJoy::Impl::feedback_callback(
+    GoalHandleGripper::SharedPtr,
+    const std::shared_ptr<const Gripper::Feedback> feedback)
+  {
+    RCLCPP_INFO(parent->get_logger(), "Current Feedback = %f", feedback->position);
+    gripper_pos = feedback->position;
+  }
+
+  void TeleopTwistJoy::Impl::result_callback(const GoalHandleGripper::WrappedResult & result)
+  {
+    switch (result.code) {
+      case rclcpp_action::ResultCode::SUCCEEDED:
+        break;
+      case rclcpp_action::ResultCode::ABORTED:
+        RCLCPP_ERROR(parent->get_logger(), "Goal was aborted");
+        return;
+      case rclcpp_action::ResultCode::CANCELED:
+        RCLCPP_ERROR(parent->get_logger(), "Goal was canceled");
+        return;
+      default:
+        RCLCPP_ERROR(parent->get_logger(), "Unknown result code");
+        return;
+    }
+    auto goal_result = result.result->reached_goal;
+
+    // RCLCPP_INFO(parent->get_logger(), "Goal Result = %s", goal_result ? "True" : "False");
+
+    running_gripper_cmd = false;
+    
+    #if RCLCPP_LOG_MIN_SEVERITY_DEBUG == 1
+      RCLCPP_DEBUG(parent->get_logger(), "Running Gripper cmd = %s", running_gripper_cmd ? "True" : "False");
+    #endif
+    gripper_pos = result.result->position;
+    // rclcpp::shutdown();
+  }
+
+/// Maps a value from an input range to an output range
+double map_to_range(double inputVal, std::tuple<double, double> input_range, std::tuple<double, double> output_range)
+{
+  auto slope = 1.0 * (std::get<1>(output_range) - std::get<0>(output_range)) / (std::get<1>(input_range) - std::get<0>(input_range));
+  return std::get<0>(output_range) + (slope * (inputVal - std::get<0>(input_range)));
+}
+
+
   void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr joy_msg,
                                            const std::string &which_map)
   {
@@ -537,7 +639,6 @@ namespace teleop_twist_joy
     sent_disable_msg = false;
   }
 
-  //
   void TeleopTwistJoy::Impl::toggleJogDevice()
   {
     // auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(my_node, "teleop_twist_joy_node");
@@ -582,7 +683,8 @@ namespace teleop_twist_joy
 
   void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
   {
-    if (joy_msg_buttons_prev[jog_arm_button] == 0 && joy_msg->buttons[jog_arm_button] == 1)
+    // SWitches between controlling the Arm or the Base based on the jog_arm_button presses
+    if (joy_msg_buttons_prev[jog_arm_button] == 1 && joy_msg->buttons[jog_arm_button] == 0)
     {
       toggleJogDevice();
 
@@ -593,6 +695,8 @@ namespace teleop_twist_joy
       cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
     }
 
+
+    // CMD_VEL mapping based on E-Stop State
     if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
     {
       sent_disable_msg = false;
@@ -619,6 +723,38 @@ namespace teleop_twist_joy
       }
     }
 
+
+    auto close_trigger_val = joy_msg->axes[arm.gripper_map.at("close")];
+    auto open_trigger_val = joy_msg->axes[arm.gripper_map.at("open")];
+
+    // Handles logic for opening and closing the gripper with the triggers
+    if (close_trigger_val <= 0.99 && (gripper_pos <= map_to_range(close_trigger_val, {1, -1}, {0, 0.8})))
+    {
+      if (!running_gripper_cmd)
+      {
+        auto goal_msg = std::make_shared<control_msgs::msg::GripperCommand>();
+        goal_msg->position = map_to_range(close_trigger_val, {1, -1}, {gripper_pos, 0.8});
+        goal_msg->max_effort = 100.0;
+        // RCLCPP_INFO(parent->get_logger(), "Trigger Value [Close] = %f", close_trigger_val);
+        RCLCPP_INFO(parent->get_logger(), "Gripper Position [Close] = %f", map_to_range(close_trigger_val, {1, -1}, {gripper_pos, 0.8}));
+        send_goal(goal_msg);
+      }
+    }
+    else if (open_trigger_val <= 0.99 && (gripper_pos >= map_to_range(open_trigger_val, {1, -1}, {0.8, 0})))
+    {
+      if (!running_gripper_cmd)
+      {
+        // RCLCPP_INFO(parent->get_logger(), "Running Gripper cmd = %s", running_gripper_cmd ? "True" : "False");
+        auto goal_msg = std::make_shared<control_msgs::msg::GripperCommand>();
+        goal_msg->position = map_to_range(open_trigger_val, {1, -1}, {gripper_pos, 0});
+        goal_msg->max_effort = 100.0;
+        // RCLCPP_INFO(parent->get_logger(), "Trigger Value [Open] = %f", open_trigger_val);
+        RCLCPP_INFO(parent->get_logger(), "Gripper Position [Open] = %f", map_to_range(open_trigger_val, {1, -1}, {gripper_pos, 0}));
+        send_goal(goal_msg);
+      }
+    }
+
+    // REcord the current joy msg state as the previous state in the next iteration
     joy_msg_buttons_prev = joy_msg->buttons;
   }
 
