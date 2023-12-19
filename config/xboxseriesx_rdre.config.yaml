@@ -9,11 +9,11 @@ teleop_twist_joy_node:
       y: 0.7
       z: 0.7
     arm_axis_angular:  # Left thumb stick horizontal
-      yaw: 3 # was 3
-      pitch: 1 # was 1 
-      roll: 0 # X  was 0
+      yaw: 3
+      pitch: 1
+      roll: 0
     arm_scale_angular:
-      yaw: -30.0 # Z
+      yaw: -30.0
       pitch: 30.0 # Y
       roll: -30.0 # X
     arm_gripper: 
@@ -50,6 +50,7 @@ teleop_twist_joy_node:
         joint_6: 0.0        
         joint_7: 0.0 
 
+
     base_axis_linear:  # Left thumb stick vertical
       x: 1
     base_scale_linear:
@@ -59,9 +60,9 @@ teleop_twist_joy_node:
     base_scale_angular:
       yaw: -0.4
     
-    XYTwist_toggle: 8 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
-    ZTwist_toggle: 9 # Right joystick button to switch between controlling translation and rotation in the Z axes
+    XYTwist_toggle: 9 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
+    ZTwist_toggle: 10 # Right joystick button to switch between controlling translation and rotation in the Z axes
       
-    jog_arm_button: 10  # home button. 
+    jog_arm_button: 8  # home button. 
     deactivate_estop_button: 4  # Left bumper button
     activate_estop_button: 5  # Right bumper button
