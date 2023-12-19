@@ -14,15 +14,19 @@ find_package(ament_cmake REQUIRED)
 
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(control_msgs REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED src/teleop_twist_joy.cpp)
 target_link_libraries(${PROJECT_NAME}
   ${geometry_msgs_TARGETS}
+  rclcpp_action::rclcpp_action
   rclcpp::rclcpp
   rclcpp_components::component
   ${sensor_msgs_TARGETS}
+  ${control_msgs_TARGETS}
 )
 
 include(GenerateExportHeader)
