@@ -1,0 +1,68 @@
+teleop_twist_joy_node:
+  ros__parameters:
+    arm_axis_linear:  # Left thumb stick vertical
+      x: 1
+      y: 0
+      z: 4
+    arm_scale_linear:
+      x: 0.7
+      y: 0.7
+      z: 0.7
+    arm_axis_angular:  # Left thumb stick horizontal
+      yaw: 3
+      pitch: 1
+      roll: 0
+    arm_scale_angular:
+      yaw: -30.0
+      pitch: 30.0 # Y
+      roll: -30.0 # X
+    arm_gripper: 
+      close: 2 # Left trigger
+      open: 5 # Right trigger
+    arm_preset_buttons:
+      retract: 0 # "A" Button
+      home: 1 # "B" Button
+      preset3: 2 # "X" Button
+      preset4: 3 # "Y" Button
+    arm_preset_positions: # All presets are in radians
+      home:
+        joint_1: 0.0        
+        joint_2: 0.0        
+        joint_3: 0.0        
+        joint_4: 0.0        
+        joint_5: 0.0        
+        joint_6: 0.0        
+        joint_7: 0.0        
+      retract:
+        joint_1: 0.0        
+        joint_2: 0.0        
+        joint_3: 0.0        
+        joint_4: 0.0        
+        joint_5: 0.0        
+        joint_6: 0.0        
+        joint_7: 0.0 
+      twist_door_handle:
+        joint_1: 0.0        
+        joint_2: 0.0        
+        joint_3: 0.0        
+        joint_4: 0.0        
+        joint_5: 0.0        
+        joint_6: 0.0        
+        joint_7: 0.0 
+
+
+    base_axis_linear:  # Left thumb stick vertical
+      x: 1
+    base_scale_linear:
+      x: 0.7
+    base_axis_angular:  # Left thumb stick horizontal
+      yaw: 3
+    base_scale_angular:
+      yaw: -0.4
+    
+    XYTwist_toggle: 9 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
+    ZTwist_toggle: 10 # Right joystick button to switch between controlling translation and rotation in the Z axes
+      
+    jog_arm_button: 8  # home button. 
+    deactivate_estop_button: 4  # Left bumper button
+    activate_estop_button: 5  # Right bumper button

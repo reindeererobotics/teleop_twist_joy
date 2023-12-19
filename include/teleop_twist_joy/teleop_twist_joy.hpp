@@ -28,6 +28,10 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <rclcpp/rclcpp.hpp>
 #include "teleop_twist_joy/teleop_twist_joy_export.h"
 
+#include "rclcpp_action/rclcpp_action.hpp"
+#include "control_msgs/action/gripper_command.hpp"
+#include "control_msgs/msg/gripper_command.hpp"
+
 namespace teleop_twist_joy
 {
 
@@ -45,6 +49,10 @@ private:
   struct Impl;
   Impl* pimpl_;
   OnSetParametersCallbackHandle::SharedPtr callback_handle;  
+  
+public:
+  using Gripper = control_msgs::action::GripperCommand;
+  using GoalHandleGripper = rclcpp_action::ClientGoalHandle<Gripper>;
 };
 
 }  // namespace teleop_twist_joy
