@@ -20,10 +20,14 @@ teleop_twist_joy_node:
       close: 2 # Left trigger
       open: 5 # Right trigger
     arm_preset_buttons:
-      retract: 0 # "A" Button
-      home: 1 # "B" Button
-      preset3: 2 # "X" Button
-      preset4: 3 # "Y" Button
+      retract: 0 # Preset Layer 1: "A" Button
+      home: 1 # Preset Layer 1: "B" Button
+      autoDoorBtnRHS: 2 # Preset Layer 1: "X" Button
+      doorKnockFwd: 3 # Preset Layer 1: "Y" Button
+      elevatorCallDownBtn: 0 # Preset Layer 2: "A" Button
+      elevatorCallUpBtn: 1 # Preset Layer 2: "B" Button
+      elevatorSelectFirst: 2 # Preset Layer 2: "X" Button
+      elevatorSelectSecond: 3 # Preset Layer 2: "Y" Button
     arm_preset_pos: # All preset positions are in degrees
       retract:
         joint_1: 0.0        
@@ -112,7 +116,7 @@ teleop_twist_joy_node:
         min: -0.0
         max: 0.0
     presetDuration: 15 # in Seconds
-    
+
 
     base_axis_linear:  # Left thumb stick vertical
       x: 1
