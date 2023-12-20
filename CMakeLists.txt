@@ -18,6 +18,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED src/teleop_twist_joy.cpp)
 target_link_libraries(${PROJECT_NAME}
@@ -27,6 +28,8 @@ target_link_libraries(${PROJECT_NAME}
   rclcpp_components::component
   ${sensor_msgs_TARGETS}
   ${control_msgs_TARGETS}
+  # ${std_msgs_TARGETS}
+  # ${builtin_interfaces_TARGETS}
 )
 
 include(GenerateExportHeader)

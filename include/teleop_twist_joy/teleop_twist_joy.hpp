@@ -30,7 +30,14 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "control_msgs/action/gripper_command.hpp"
+#include "control_msgs/action/follow_joint_trajectory.hpp"
+
+
+// #include "trajectory_msgs/action/joint_trajectory_point.hpp"
+#include "std_msgs/msg/header.hpp"
 #include "control_msgs/msg/gripper_command.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 
 namespace teleop_twist_joy
 {
@@ -51,8 +58,11 @@ private:
   OnSetParametersCallbackHandle::SharedPtr callback_handle;  
   
 public:
-  using Gripper = control_msgs::action::GripperCommand;
-  using GoalHandleGripper = rclcpp_action::ClientGoalHandle<Gripper>;
+  using Gripper_action = control_msgs::action::GripperCommand;
+  using GoalHandleGripper = rclcpp_action::ClientGoalHandle<Gripper_action>;
+
+  using Arm_action = control_msgs::action::FollowJointTrajectory;
+  using GoalHandleArm = rclcpp_action::ClientGoalHandle<Arm_action>;
 };
 
 }  // namespace teleop_twist_joy
