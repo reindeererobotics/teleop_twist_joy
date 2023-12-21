@@ -30,13 +30,17 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <set>
 #include <string>
 #include <math.h>
+#include <chrono>
+#include <algorithm>
 
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
 #include <rcutils/logging_macros.h>
 #include <sensor_msgs/msg/joy.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <builtin_interfaces/msg/duration.hpp>
+#include <controller_manager_msgs/srv/switch_controller.hpp>
 
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
@@ -58,6 +62,7 @@ namespace teleop_twist_joy
     TeleopTwistJoy *parentNode;
 
     void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy);
+    void jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr jointState_msg);
     void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string &which_map);
     // void toggleROSParam(std::string paramName);
     void toggleROSParam(char *paramName, bool paramState);
@@ -93,6 +98,7 @@ namespace teleop_twist_joy
     rclcpp_action::Client<Gripper_action>::SharedPtr gripper_client_ptr_;
     rclcpp_action::Client<Arm_action>::SharedPtr arm_client_ptr_;
 
+    rclcpp::Client<controller_manager_msgs::srv::SwitchController>::SharedPtr arm_srv_client_ptr_ ;
 
     int64_t activate_estop_button;
     int64_t deactivate_estop_button;
@@ -121,6 +127,8 @@ namespace teleop_twist_joy
 
     struct
     {
+      rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr jointState_sub;
+
       std::map<std::string, int64_t> axis_linear_map;
       std::map<std::string, std::map<std::string, double>> scale_linear_map;
 
@@ -162,13 +170,18 @@ namespace teleop_twist_joy
         "joint_7"
       };
 
+      int toggle_control_mode_button;
+      std::string control_mode = "joint"; //"twist"; // control modes implemented are "twist" and "joint"
+      std::map<std::string, double> jointPos; // The current joint positions
+
     } arm;
 
     bool sent_disable_msg;
     bool running_gripper_action;
     bool running_arm_action;
     double gripper_pos;
-
+    
+    // std::vector<double> jointPos; // The current joint positions
 
   };
 
@@ -185,9 +198,14 @@ namespace teleop_twist_joy
     pimpl_->cmd_vel_base_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel_base", 10);
     pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
                                                                        std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
+    pimpl_->arm.jointState_sub = this->create_subscription<sensor_msgs::msg::JointState>("/joint_states", rclcpp::QoS(10),
+                                                                       std::bind(&TeleopTwistJoy::Impl::jointStateCallback, this->pimpl_, std::placeholders::_1));
 
     pimpl_->gripper_client_ptr_ = rclcpp_action::create_client<Gripper_action>(this, "/robotiq_gripper_controller/gripper_cmd");
     pimpl_->arm_client_ptr_ = rclcpp_action::create_client<Arm_action>(this, "/joint_trajectory_controller/follow_joint_trajectory");
+    pimpl_->arm_srv_client_ptr_ =
+    this->create_client<controller_manager_msgs::srv::SwitchController>("/controller_manager/switch_controller");
+
 
     pimpl_->estop_activated = this->declare_parameter("estop_activated", false);
     pimpl_->deactivate_estop_button = this->declare_parameter("deactivate_estop_button", 4);
@@ -202,6 +220,8 @@ namespace teleop_twist_joy
 
     pimpl_->XYTwist_toggle = this->declare_parameter("XYTwist_toggle", 8);
     pimpl_->ZTwist_toggle = this->declare_parameter("ZTwist_toggle", 9);
+
+    pimpl_->arm.toggle_control_mode_button = this->declare_parameter("toggle_control_mode_button", 6);
 
     // pimpl_->arm.toggleCartAdmittance = this->declare_parameter("arm_toggleCartAdmittance", 2);
     // pimpl_->arm.toggleNullAdmittance = this->declare_parameter("arm_toggleNullAdmittance", 3);
@@ -265,6 +285,8 @@ namespace teleop_twist_joy
       this->declare_parameters("arm_joint_limits." + presetJointName, default_joint_limits_map);
       this->get_parameters("arm_joint_limits." + presetJointName, pimpl_->arm.joint_limits[presetJointName]);
     }
+
+    pimpl_->arm.jointPos = default_preset_pos_map;
     
     int ind = 0;
     for(std::string presetName : pimpl_->arm.presetNames)
@@ -308,6 +330,10 @@ namespace teleop_twist_joy
       // ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
       //   "Turbo for angular axis %s is scale %f.", it->first.c_str(), pimpl_->scale_angular_map["turbo"][it->first]);
     }
+    
+    ROS_INFO_COND_NAMED(pimpl_->arm.control_mode != "", "TeleopTwistJoy",
+                        "The Control Mode for the Arm on ROS is currently set to  *** %s ***.\n \
+                        Change this by pushing the \"SELECT\" Button on the controller.", pimpl_->arm.control_mode.c_str());
         
     pimpl_->sent_disable_msg = false;
     pimpl_->running_gripper_action = false;
@@ -323,7 +349,8 @@ namespace teleop_twist_joy
                                                 "base_axis_linear.x", "base_axis_linear.y", "base_axis_linear.z",
                                                 "base_axis_angular.yaw", "base_axis_angular.pitch", "base_axis_angular.roll",
                                                 "activate_estop_button", "deactivate_estop_button", "jog_arm_button",
-                                                "XYTwist_toggle", "ZTwist_toggle", "arm_presetDuration", "toggle_preset_layer_button"};
+                                                "XYTwist_toggle", "ZTwist_toggle", "arm_presetDuration", "toggle_preset_layer_button",
+                                                "toggle_control_mode_button"};
 
       for(std::string presetName : pimpl_->arm.presetNames)
       {
@@ -421,6 +448,10 @@ namespace teleop_twist_joy
         else if (parameter.get_name() == "toggle_preset_layer_button")
         {
           this->pimpl_->toggle_preset_layer_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
+        }
+        else if (parameter.get_name() == "toggle_control_mode_button")
+        {
+          this->pimpl_->arm.toggle_control_mode_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
         }
         else if (parameter.get_name() == "arm_axis_linear.x") // Get Parameters related to the robotic base
         {
@@ -588,18 +619,25 @@ namespace teleop_twist_joy
     int ind = 0;
     for(std::string presetJointName : arm.presetJointNames)
     {
+
       double jointPos = arm.preset_pos_map[presetName][presetJointName];
       
       // if (jointPos == 0.0 || jointPos == -0.0) continue; // Skip the joint limits with 0s since they're Inf and -Inf
 
-      if (jointPos > arm.joint_limits[presetJointName]["max"])
+      if (std::abs(jointPos - arm.jointPos[presetJointName]) > std::abs((jointPos - 360) - arm.jointPos[presetJointName]))
       {
-        jointPos = jointPos - 360; 
+        jointPos = (jointPos - 360);
       }
-      else if (jointPos < arm.joint_limits[presetJointName]["min"])
-      {
-        jointPos = 360 - jointPos;
-      }
+
+      // if (jointPos > arm.joint_limits[presetJointName]["max"])
+      // {
+      //   jointPos = jointPos - 360; 
+      // }
+      // else if (jointPos < arm.joint_limits[presetJointName]["min"])
+      // {
+      //   jointPos = 360 - jointPos;
+      // }
+
       jointPos = jointPos * (M_PI/180); // Convert degrees to radians
       positions[ind] = jointPos;
       ind++;
@@ -895,114 +933,201 @@ namespace teleop_twist_joy
     // On button release
     if (joy_msg_buttons_prev[toggle_preset_layer_button] == 1 && joy_msg->buttons[toggle_preset_layer_button] == 0)
     {
-        presetLayerToggled = !presetLayerToggled;
-        parentNode->set_parameter(rclcpp::Parameter("presetLayerToggled", presetLayerToggled));
+      presetLayerToggled = !presetLayerToggled;
+      parentNode->set_parameter(rclcpp::Parameter("presetLayerToggled", presetLayerToggled));
+    }
+
+    // Switches control modes for controlling the arm (e.g. between twist and joint)
+    // [On Button Release]
+    if (joy_msg_buttons_prev[arm.toggle_control_mode_button] == 1 && joy_msg->buttons[arm.toggle_control_mode_button] == 0)
+    {
+      std::vector<std::string> start_controller;
+      std::vector<std::string> stop_controller;
+      if (arm.control_mode == "twist")
+      {
+        arm.control_mode = "joint";
+        start_controller.push_back("joint_trajectory_controller");
+        stop_controller.push_back("twist_controller");
+      }
+      else
+      {
+        arm.control_mode = "twist";
+        start_controller.push_back("twist_controller");
+        stop_controller.push_back("joint_trajectory_controller");
+      }
+      auto arm_controlMode_chg_request = std::make_shared<controller_manager_msgs::srv::SwitchController::Request>();
+      arm_controlMode_chg_request->strictness = 1;
+      arm_controlMode_chg_request->activate_controllers = start_controller;
+      arm_controlMode_chg_request->deactivate_controllers = stop_controller;
+      arm_controlMode_chg_request->activate_asap = true;
+
+      using namespace std::chrono_literals;
+      while (!arm_srv_client_ptr_->wait_for_service(1s))
+      {
+        if (!rclcpp::ok())
+        {
+          RCLCPP_ERROR(parentNode->get_logger(), "Interrupted while waiting for the service. Exiting.");
+        }
+        RCLCPP_INFO(parentNode->get_logger(), "service not available, waiting again...");
+      }
+      auto arm_controlMode_chg_result = arm_srv_client_ptr_->async_send_request(arm_controlMode_chg_request);
+
+      RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "arm.control_mode has been switched to ***%s*** control", 
+                                arm_controlMode_chg_result.get()->ok ? arm.control_mode.c_str() : "Control Mode Change Request Not Completed.");
+
+      // // TODO - Find a way to get the Node object from TeleopTwistJoy. "parentNode" is not actually the node object,
+      // // It is of type "teleop_twist_joy::TeleopTwistJoy*&"
+      // if (rclcpp::spin_until_future_complete(parentNode, arm_controlMode_chg_result) ==
+      //   rclcpp::FutureReturnCode::SUCCESS)
+      // {
+      //   RCLCPP_INFO(rclcpp::get_logger("rclcpp"), "arm.control_mode has been switched to ***%s*** control", 
+      //                           arm_controlMode_chg_result.get()->ok ? arm.control_mode.c_str() : "Control Mode Change Request Not Completed.");
+      // } 
+      // else 
+      // {
+      //   RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Failed to call service to switch controllers. Control mode remains ***%s*** control", arm.control_mode.c_str());
+      // }
     }
 
     // Switches between cartesian and angular joystick control
     if (joy_msg_buttons_prev[XYTwist_toggle] == 0 && joy_msg->buttons[XYTwist_toggle] == 1)
-    { XYTwist_toggled = !XYTwist_toggled; }
+    {
+      XYTwist_toggled = !XYTwist_toggled;
+    }
     if (joy_msg_buttons_prev[ZTwist_toggle] == 0 && joy_msg->buttons[ZTwist_toggle] == 1)
-    { ZTwist_toggled = !ZTwist_toggled; }
+    {
+      ZTwist_toggled = !ZTwist_toggled;
+    }
 
     // CMD_VEL mapping based on E-Stop State
-    if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
     {
-      sent_disable_msg = false;
-      toggleEmergencyStop(sent_disable_msg);
-    }
-    else if (joy_msg_buttons_prev[activate_estop_button] == 0 && joy_msg->buttons[activate_estop_button] == 1)
-    {
-      if (!sent_disable_msg)
+      if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
       {
-        // Initializes with zeros by default.
-        auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-        auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
-        cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
-        cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
-        sent_disable_msg = true;
+        sent_disable_msg = false;
+        toggleEmergencyStop(sent_disable_msg);
       }
-      toggleEmergencyStop(sent_disable_msg);
-    }
-    else
-    {
-      if (!sent_disable_msg)
+      else if (joy_msg_buttons_prev[activate_estop_button] == 0 && joy_msg->buttons[activate_estop_button] == 1)
       {
-        sendCmdVelMsg(joy_msg, "normal");
+        if (!sent_disable_msg)
+        {
+          // Initializes with zeros by default.
+          auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+          auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
+          cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
+          cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
+          sent_disable_msg = true;
+        }
+        toggleEmergencyStop(sent_disable_msg);
+      }
+      else
+      {
+        if (!sent_disable_msg)
+        {
+          sendCmdVelMsg(joy_msg, "normal");
+        }
       }
     }
-
-
-    auto close_trigger_val = joy_msg->axes[arm.gripper_map.at("close")];
-    auto open_trigger_val = joy_msg->axes[arm.gripper_map.at("open")];
 
     // Handles logic for opening and closing the gripper with the triggers
-    if (close_trigger_val <= 0.99 && (gripper_pos <= map_to_range(close_trigger_val, {1, -1}, {0, 0.8})))
     {
-      if (!running_gripper_action)
+      auto close_trigger_val = joy_msg->axes[arm.gripper_map.at("close")];
+      auto open_trigger_val = joy_msg->axes[arm.gripper_map.at("open")];
+
+      if (close_trigger_val <= 0.99 && (gripper_pos <= map_to_range(close_trigger_val, {1, -1}, {0, 0.8})))
       {
-        auto goal_msg = std::make_shared<control_msgs::msg::GripperCommand>();
-        goal_msg->position = map_to_range(close_trigger_val, {1, -1}, {gripper_pos, 0.8});
-        goal_msg->max_effort = 100.0;
-        // RCLCPP_INFO(parentNode->get_logger(), "Trigger Value [Close] = %f", close_trigger_val);
-        RCLCPP_INFO(parentNode->get_logger(), "Gripper Position [Close] = %f", map_to_range(close_trigger_val, {1, -1}, {gripper_pos, 0.8}));
-        send_goal(goal_msg);
+        if (!running_gripper_action)
+        {
+          auto goal_msg = std::make_shared<control_msgs::msg::GripperCommand>();
+          goal_msg->position = map_to_range(close_trigger_val, {1, -1}, {gripper_pos, 0.8});
+          goal_msg->max_effort = 100.0;
+          // RCLCPP_INFO(parentNode->get_logger(), "Trigger Value [Close] = %f", close_trigger_val);
+          RCLCPP_INFO(parentNode->get_logger(), "Gripper Position [Close] = %f", map_to_range(close_trigger_val, {1, -1}, {gripper_pos, 0.8}));
+          send_goal(goal_msg);
+        }
       }
-    }
-    else if (open_trigger_val <= 0.99 && (gripper_pos >= map_to_range(open_trigger_val, {1, -1}, {0.8, 0})))
-    {
-      if (!running_gripper_action)
+      else if (open_trigger_val <= 0.99 && (gripper_pos >= map_to_range(open_trigger_val, {1, -1}, {0.8, 0})))
       {
-        // RCLCPP_INFO(parentNode->get_logger(), "Running Gripper cmd = %s", running_gripper_action ? "True" : "False");
-        auto goal_msg = std::make_shared<control_msgs::msg::GripperCommand>();
-        goal_msg->position = map_to_range(open_trigger_val, {1, -1}, {gripper_pos, 0});
-        goal_msg->max_effort = 100.0;
-        // RCLCPP_INFO(parentNode->get_logger(), "Trigger Value [Open] = %f", open_trigger_val);
-        RCLCPP_INFO(parentNode->get_logger(), "Gripper Position [Open] = %f", map_to_range(open_trigger_val, {1, -1}, {gripper_pos, 0}));
-        send_goal(goal_msg);
+        if (!running_gripper_action)
+        {
+          // RCLCPP_INFO(parentNode->get_logger(), "Running Gripper cmd = %s", running_gripper_action ? "True" : "False");
+          auto goal_msg = std::make_shared<control_msgs::msg::GripperCommand>();
+          goal_msg->position = map_to_range(open_trigger_val, {1, -1}, {gripper_pos, 0});
+          goal_msg->max_effort = 100.0;
+          // RCLCPP_INFO(parentNode->get_logger(), "Trigger Value [Open] = %f", open_trigger_val);
+          RCLCPP_INFO(parentNode->get_logger(), "Gripper Position [Open] = %f", map_to_range(open_trigger_val, {1, -1}, {gripper_pos, 0}));
+          send_goal(goal_msg);
+        }
       }
-    }
-    
-    std::string presetName;
-    int startInd;
-    int endInd;
-    if (presetLayerToggled && arm.presetNames.size()==8)
-    {
-      startInd = 4;
-      endInd = 8;
-    }
-    else 
-    {
-      startInd = 0;
-      endInd = 4;
     }
 
     // Handles logic for setting presets on the Arm
-    for(int ind = startInd; ind < endInd; ind++)
     {
-      presetName = arm.presetNames[ind];
-      if(!running_arm_action && joy_msg_buttons_prev[arm.preset_pos_button_map[presetName]] == 0 && joy_msg->buttons[arm.preset_pos_button_map[presetName]] == 1)
+      std::string presetName;
+      int startInd;
+      int endInd;
+      if (presetLayerToggled && arm.presetNames.size() == 8)
       {
-        send_goal(prepArmActionGoal(presetName));
+        startInd = 4;
+        endInd = 8;
       }
-
-      if(running_arm_action && joy_msg_buttons_prev[arm.preset_pos_button_map[presetName]] == 1 && joy_msg->buttons[arm.preset_pos_button_map[presetName]] == 0)
+      else
       {
-        RCLCPP_INFO(parentNode->get_logger(), "canceling goal");
-        // Cancel the goal since it is taking too long
-        auto cancel_result_future = arm_client_ptr_->async_cancel_all_goals();//async_cancel_goal(goal_handle);
-        // if (rclcpp::spin_until_future_complete(this, cancel_result_future) !=
-        //   rclcpp::FutureReturnCode::SUCCESS)
-        // {
-        //   RCLCPP_ERROR(parentNode->get_logger(), "failed to cancel goal");
-        // }
-        RCLCPP_INFO(parentNode->get_logger(), "goal is being canceled");
-        running_arm_action = false;
+        startInd = 0;
+        endInd = 4;
       }
+      if (arm.control_mode == "joint")
+      {
+        for (int ind = startInd; ind < endInd; ind++)
+        {
+          presetName = arm.presetNames[ind];
+          
+          if (!running_arm_action && joy_msg_buttons_prev[arm.preset_pos_button_map[presetName]] == 0 && joy_msg->buttons[arm.preset_pos_button_map[presetName]] == 1)
+          {
+            send_goal(prepArmActionGoal(presetName));
+          }
 
+          if (running_arm_action && joy_msg_buttons_prev[arm.preset_pos_button_map[presetName]] == 1 && joy_msg->buttons[arm.preset_pos_button_map[presetName]] == 0)
+          {
+            RCLCPP_INFO(parentNode->get_logger(), "canceling goal");
+            // Cancel the goal since it is taking too long
+            auto cancel_result_future = arm_client_ptr_->async_cancel_all_goals(); // async_cancel_goal(goal_handle);
+            // if (rclcpp::spin_until_future_complete(this, cancel_result_future) !=
+            //   rclcpp::FutureReturnCode::SUCCESS)
+            // {
+            //   RCLCPP_ERROR(parentNode->get_logger(), "failed to cancel goal");
+            // }
+            RCLCPP_INFO(parentNode->get_logger(), "goal is being canceled");
+            running_arm_action = false;
+          }
+        }
+      }
+      else
+      {
+        RCLCPP_ERROR(parentNode->get_logger(), "Cannot run presents (using joint positions) in Twist control mode.");
+      }
     }
-    // REcord the current joy msg state as the previous state in the next iteration
+    
+    // Record the current joy msg state as the previous state in the next iteration
     joy_msg_buttons_prev = joy_msg->buttons;
+  }
+
+  void TeleopTwistJoy::Impl::jointStateCallback(const sensor_msgs::msg::JointState::SharedPtr jointState_msg)
+  {
+    for (std::string jointName : arm.presetJointNames)
+    {
+      auto iter = std::find(jointState_msg->name.begin(), jointState_msg->name.end(), jointName);
+    
+      // Check if the element was found
+      if (iter != jointState_msg->name.end())
+      {
+        int index = iter - jointState_msg->name.begin();
+        arm.jointPos[jointName] = jointState_msg->position[index];
+      }
+      else
+      {
+        RCLCPP_DEBUG(parentNode->get_logger(), "Joint Name \"%s\" not found in \"\\joint_states\" topic. Unable to control joint. ", jointName.c_str());
+      }
+    }
   }
 
 } // namespace teleop_twist_joy
