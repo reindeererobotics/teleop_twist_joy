@@ -5,15 +5,15 @@ teleop_twist_joy_node:
       y: 0
       z: 4
     arm_scale_linear:
-      x: 0.7
-      y: 0.7
-      z: 0.7
+      x: 0.2 # - unitless?
+      y: 0.2
+      z: 0.2
     arm_axis_angular:  # Left thumb stick horizontal
       yaw: 3 # was 3
       pitch: 1 # was 1 
       roll: 0 # X  was 0
     arm_scale_angular:
-      yaw: -30.0 # Z
+      yaw: -30.0 # Z - Deg/sec
       pitch: 30.0 # Y
       roll: -30.0 # X
     arm_gripper: 
@@ -46,13 +46,13 @@ teleop_twist_joy_node:
         joint_6: 55.0        
         joint_7: 90.0        
       autoDoorBtnRHS:
-        joint_1: 94.681        
-        joint_2: 8.646        
-        joint_3: 176.208        
-        joint_4: 268.15        
-        joint_5: 357.604        
-        joint_6: 10.454        
-        joint_7: 92.717
+        joint_1: 85.450 # 94.691        
+        joint_2: 352.777 # 8.646        
+        joint_3: 178.161 # 176.208        
+        joint_4: 212.205 # 268.15        
+        joint_5: 353.165 # 357.604        
+        joint_6: 48.112 # 10.454        
+        joint_7: 87.087 # 92.717
       doorKnockFwd:
         joint_1: 359.99        
         joint_2: 0.0        
@@ -115,7 +115,7 @@ teleop_twist_joy_node:
       joint_7:
         min: -0.0
         max: 0.0
-    presetDuration: 15 # in Seconds
+    maxPresetDuration: 15 # in Seconds
     toggle_control_mode_button: 6  # Button to switch between twist and joint control
 
 
@@ -135,3 +135,5 @@ teleop_twist_joy_node:
     jog_arm_button: 10  # home button. 
     deactivate_estop_button: 4  # Left bumper button
     activate_estop_button: 5  # Right bumper button
+
+    speed_changer_dpad: 7 # D-PAD Up/Down to increase or decrease the linear and angular speeds to or from their max.

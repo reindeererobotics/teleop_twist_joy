@@ -20,6 +20,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(controller_manager_msgs REQUIRED)
+find_package(example_interfaces REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED src/teleop_twist_joy.cpp)
 target_link_libraries(${PROJECT_NAME}
@@ -32,6 +33,7 @@ target_link_libraries(${PROJECT_NAME}
   # ${std_msgs_TARGETS}
   # ${builtin_interfaces_TARGETS}
   ${controller_manager_msgs_TARGETS}
+  ${example_interfaces_TARGETS}
 )
 
 include(GenerateExportHeader)
