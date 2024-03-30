@@ -155,6 +155,7 @@ namespace teleop_twist_joy
 
     struct
     {
+      bool connected = false;
       rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr jointState_sub;
 
       std::map<std::string, int64_t> axis_linear_map;
@@ -261,7 +262,7 @@ namespace teleop_twist_joy
       pimpl_->deactivate_estop_button = this->declare_parameter("deactivate_estop_button", 4);
       pimpl_->activate_estop_button = this->declare_parameter("activate_estop_button", 5);
 
-      pimpl_->arm_jogged = this->declare_parameter("arm_jogged", true);
+      pimpl_->arm_jogged = this->declare_parameter("arm_jogged", false);
       pimpl_->presetLayerToggled = this->declare_parameter("presetLayerToggled", false);
       pimpl_->jog_arm_button = this->declare_parameter("jog_arm_button", 10);
 
