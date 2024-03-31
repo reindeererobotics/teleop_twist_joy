@@ -139,17 +139,17 @@ namespace teleop_twist_joy
       std::map<std::string, int64_t> axis_angular_map;
       std::map<std::string, std::map<std::string, double>> scale_angular_map;
 
-      double maxAngVel = 1; // The maximum angular velocity in degs per second
-      double maxLinVel = 1;  // The maximum linear twist velocity - // Setting this to 1 instead of 0.5m/s since 
+      double maxLinVel = 1.5;  // (Absolute value only) The maximum linear twist velocity - // Setting this to 1 to signify 100% 
+      double maxAngVel = 0.6; // (Absolute value only) The maximum angular velocity in degs per second
 
       std::map<std::string, double> speedDelta = {
         {"linear", 0.1},
         {"angular", 0.1}
-      };
+      }; //(Absolute value only) 
       std::map<std::string, double> minSpeeds = {
         {"linear", 0.01},
         {"angular", 0.01}
-      };
+      }; //(Absolute value only) 
 
     } base;
 
