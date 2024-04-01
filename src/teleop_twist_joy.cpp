@@ -799,7 +799,7 @@ namespace teleop_twist_joy
   void TeleopTwistJoy::Impl::getArmControllerStates()
   {
     // Wait for service to be available
-    if (!listCntrl_client_ptr_->wait_for_service(std::chrono::seconds(5))) {
+    if (!listCntrl_client_ptr_->wait_for_service(std::chrono::seconds(5))) { // Consider changing this to 3 seconds for faster startup of node.
       RCLCPP_ERROR(parentNode->get_logger(), "Unable to find ControllerState service. ros2_control may not be running or arm is not connected.");
       armCtrlStarted = false;
       return;
