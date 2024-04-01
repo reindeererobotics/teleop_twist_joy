@@ -305,7 +305,7 @@ namespace teleop_twist_joy
           {"z", 0.0},
       };
       this->declare_parameters("arm_scale_linear", default_scale_linear_normal_map);
-      this->get_parameters("arm_scale_linear", pimpl_->arm.scale_linear_map["normal"]);
+      this->get_parameters("arm_scale_linear", pimpl_->arm.scale_linear_map["normal"]); // NOTE: "normal" here does not have any meaning and can be removed when convenient.
       this->declare_parameters("base_scale_linear", default_scale_linear_normal_map);
       this->get_parameters("base_scale_linear", pimpl_->base.scale_linear_map["normal"]);
 
@@ -1271,49 +1271,48 @@ namespace teleop_twist_joy
     // If the ARM has been selected for control (arm_jogged = true)
     if (arm_jogged)
     {
+      #define abs(val) std::abs(val)
+
       // If the UP arrow on the dpad is pressed (on press)
       if (joy_msg_axes_prev[speed_changer_dpad] == 0 && joy_msg->axes[speed_changer_dpad] == 1)
       {
         // Linear
         for (std::string lin_comp : twist_LinComps)
         {
-          // Only increase the limit if you can increase it without going over the maximum, else make it the max
-          if (std::abs(arm.scale_linear_map["normal"][lin_comp]) <= (arm.maxLinVel - arm.speedDelta["linear"]))
+          // Only increase the limit if you can increase it without going over the maximum
+          if (abs(arm.scale_linear_map["normal"][lin_comp]) <= (abs(arm.maxLinVel) - abs(arm.speedDelta["linear"])))
           {
-            // If the twist component scale is negative, increase it in the negative direction
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] - arm.speedDelta["linear"]; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] + arm.speedDelta["linear"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * (abs(arm.scale_linear_map["normal"][lin_comp]) + abs(arm.speedDelta["linear"]));
           }
+          // If the scale_linear_map is near the max value, make it the max value
           else 
           {
-            // If the twist component scale is negative, make it the negative max vel else positive
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = -arm.maxLinVel; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.maxLinVel; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * abs(arm.maxLinVel);
           }
         }
         // Angular
         for (std::string ang_comp : twist_AngComps)
         {
           // Only increase the limit if you can increase it without going over the maximum, else make it the max
-          if (std::abs(arm.scale_angular_map["normal"][ang_comp]) <= (arm.maxAngVel - arm.speedDelta["angular"]))
+          if (abs(arm.scale_angular_map["normal"][ang_comp]) <= (abs(arm.maxAngVel) - abs(arm.speedDelta["angular"])))
           {
-            // If the twist component scale is negative, increase it in the negative direction
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] - arm.speedDelta["angular"]; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] + arm.speedDelta["angular"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * (abs(arm.scale_angular_map["normal"][ang_comp]) + abs(arm.speedDelta["angular"]));
           }
           else 
           {
-            // If the twist component scale is negative, make it the negative max vel else positive
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = -arm.maxAngVel; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.maxAngVel; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * abs(arm.maxAngVel);
           }
         }
       }
@@ -1323,43 +1322,41 @@ namespace teleop_twist_joy
         // Linear
         for (std::string lin_comp : twist_LinComps)
         {
-          // Only decrease the limit if you can decrease it without going less than zero, else make it zero
-          if (std::abs(arm.scale_linear_map["normal"][lin_comp]) >= arm.speedDelta["linear"])
+          // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
+          if ((abs(arm.scale_linear_map["normal"][lin_comp]) - abs(arm.speedDelta["linear"])) > abs(arm.speedDelta["linear"]))
           {
-            // If the twist component scale is negative, decrease it in the negative direction
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] + arm.speedDelta["linear"]; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] - arm.speedDelta["linear"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * (abs(arm.scale_linear_map["normal"][lin_comp]) - abs(arm.speedDelta["linear"]));
           }
+          // If the scale_linear_map is near the min value, make it the minimum absolute limit
           else 
           {
-            // If the twist component scale is negative, make it a small number
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = -arm.minSpeeds["linear"]; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.minSpeeds["linear"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * abs(arm.minSpeeds["linear"]);
           }
         }
         // Angular
         for (std::string ang_comp : twist_AngComps)
         {
-          // Only increase the limit if you can increase it without going over the maximum, else make it the max
-          if (std::abs(arm.scale_angular_map["normal"][ang_comp]) <= arm.speedDelta["angular"])
+          // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
+          if ((abs(arm.scale_angular_map["normal"][ang_comp]) - abs(arm.speedDelta["angular"])) > abs(arm.speedDelta["angular"]))
           {
-            // If the twist component scale is negative, increase it in the negative direction
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] + arm.speedDelta["angular"]; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] - arm.speedDelta["angular"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * (abs(arm.scale_angular_map["normal"][ang_comp]) - abs(arm.speedDelta["angular"]));
           }
+          // If the scale_angular_map is near the min value, make it the minimum absolute limit
           else 
           {
-            // If the twist component scale is negative, make it the negative max vel else positive
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = -arm.minSpeeds["angular"]; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.minSpeeds["angular"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * abs(arm.minSpeeds["angular"]);
           }
         }
       }
@@ -1374,7 +1371,7 @@ namespace teleop_twist_joy
       {
         // Linear
         // Only increase the limit if you can increase it without going over the maximum
-        if (abs(base.scale_linear_map["normal"]["x"]) <= (base.maxLinVel - base.speedDelta["linear"]))
+        if (abs(base.scale_linear_map["normal"]["x"]) <= (abs(base.maxLinVel) - abs(base.speedDelta["linear"])))
         {
           double sign = 1.0;
           // If the twist component scale is negative, apply the negative sign to the increased abs calculation
@@ -1392,7 +1389,7 @@ namespace teleop_twist_joy
 
         // Angular
         // Only increase the limit if you can increase it without going over the maximum
-        if (abs(base.scale_angular_map["normal"]["yaw"]) <= (base.maxAngVel - base.speedDelta["angular"]))
+        if (abs(base.scale_angular_map["normal"]["yaw"]) <= (abs(base.maxAngVel) - abs(base.speedDelta["angular"])))
         {
           double sign = 1.0;
           // If the twist component scale is negative, apply the negative sign to the increased abs calculation
@@ -1413,7 +1410,7 @@ namespace teleop_twist_joy
       {
         // Linear
         // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
-        if (abs(base.scale_linear_map["normal"]["x"]) >= base.speedDelta["linear"])
+        if ((abs(base.scale_linear_map["normal"]["x"]) - abs(base.speedDelta["linear"])) > abs(base.speedDelta["linear"]))
         {
           double sign = 1.0;
           // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
@@ -1431,13 +1428,12 @@ namespace teleop_twist_joy
 
         // Angular
         // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
-        if (abs(base.scale_angular_map["normal"]["yaw"]) >= abs(base.speedDelta["angular"]))
+        if ((abs(base.scale_angular_map["normal"]["yaw"]) - abs(base.speedDelta["angular"])) > abs(base.speedDelta["angular"]))
         {
           double sign = 1.0;
           // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
           if (base.scale_angular_map["normal"]["yaw"] < 0){ sign = -1.0; }
           base.scale_angular_map["normal"]["yaw"] = sign * (abs(base.scale_angular_map["normal"]["yaw"]) - abs(base.speedDelta["angular"]));
-
         }
         // If the scale_angular_map is near the min value, make it the minimum absolute limit
         else
