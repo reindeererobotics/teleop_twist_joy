@@ -88,8 +88,8 @@ namespace teleop_twist_joy
 
     trajectory_msgs::msg::JointTrajectory::SharedPtr prepArmActionGoal(std::string presetName);
 
-    void getControllerStates();
-    void getControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future);
+    void getArmControllerStates();
+    void getArmControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future);
     
     void switchControllerState_callback(const rclcpp::Client<controller_manager_msgs::srv::SwitchController>::SharedFuture future);
 
@@ -227,6 +227,7 @@ namespace teleop_twist_joy
     bool sent_disable_msg;
     bool running_gripper_action;
     bool running_arm_action;
+    bool armCtrlStarted = false;
     double gripper_pos;
     
   };
@@ -361,43 +362,9 @@ namespace teleop_twist_joy
       this->declare_parameters("arm_preset_buttons", default_preset_button_map);
       this->get_parameters("arm_preset_buttons", pimpl_->arm.preset_pos_button_map);
 
-      pimpl_->getControllerStates(); // Get the initial controller states.
+      pimpl_->getArmControllerStates(); // Get the initial controller states.
     }
 
-    // Write some info to console for the user
-    {
-      ROS_INFO_COND_NAMED(pimpl_->activate_estop_button >= 0, "TeleopTwistJoy",
-                          "Default button to Activate ESTOP [Right Bumper] %" PRId64 ".", pimpl_->activate_estop_button);
-      ROS_INFO_COND_NAMED(pimpl_->deactivate_estop_button >= 0, "TeleopTwistJoy",
-                          "Default button to Deactivate ESTOP [Left Bumper] %" PRId64 ".", pimpl_->deactivate_estop_button);
-
-      for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_linear_map.begin();
-           it != pimpl_->arm.axis_linear_map.end(); ++it)
-      {
-        ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "Linear axis %s on %" PRId64 " at scale %f.",
-                            it->first.c_str(), it->second, pimpl_->arm.scale_linear_map["normal"][it->first]);
-        // ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
-        //   "Turbo for linear axis %s is scale %f.", it->first.c_str(), pimpl_->scale_linear_map["turbo"][it->first]);
-      }
-
-      for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_angular_map.begin();
-           it != pimpl_->arm.axis_angular_map.end(); ++it)
-      {
-        ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "Angular axis %s on %" PRId64 " at scale %f.",
-                            it->first.c_str(), it->second, pimpl_->arm.scale_angular_map["normal"][it->first]);
-        // ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
-        //   "Turbo for angular axis %s is scale %f.", it->first.c_str(), pimpl_->scale_angular_map["turbo"][it->first]);
-      }
-    }
-
-    pimpl_->sent_disable_msg = false;
-    pimpl_->running_gripper_action = false;
-    pimpl_->running_arm_action = false;
-
-    ROS_INFO_NAMED("TeleopTwistJoy",
-                          "The Control Mode for the Arm on ROS is currently set to %s.\n \
-                        Change this by pushing the \"SELECT\" Button on the controller.",
-                        pimpl_->arm.controllerStatus["joint"]=="active" ? "joint" : pimpl_->arm.controllerStatus["twist"]=="active" ? "twist" : "NONE");
 
     auto param_callback =
         [this](std::vector<rclcpp::Parameter> parameters)
@@ -641,6 +608,68 @@ namespace teleop_twist_joy
       return result;
     };
 
+    pimpl_->sent_disable_msg = false;
+    pimpl_->running_gripper_action = false;
+    pimpl_->running_arm_action = false;
+
+
+    // Print some info to console for the user
+    {
+      ROS_INFO_COND_NAMED(pimpl_->activate_estop_button >= 0, "TeleopTwistJoy",
+                          "Default button to Activate ESTOP [Right Bumper] %" PRId64 ".", pimpl_->activate_estop_button);
+      ROS_INFO_COND_NAMED(pimpl_->deactivate_estop_button >= 0, "TeleopTwistJoy",
+                          "Default button to Deactivate ESTOP [Left Bumper] %" PRId64 ".", pimpl_->deactivate_estop_button);
+      
+      // Print out the hardware the user is controlling
+      ROS_INFO_NAMED("TeleopTwistJoy",
+                          "You are currently controlling the %s.\n \
+                        \t\tChange this by pushing the \"HOME\" Button on the controller.",
+                        pimpl_->arm_jogged==true ? "ARM" : "BASE");
+
+      // Always prints by default for the BASE
+      {
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->base.axis_linear_map.begin();
+            it != pimpl_->base.axis_linear_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "BASE: Linear axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->base.scale_linear_map["normal"][it->first]);
+        }
+
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->base.axis_angular_map.begin();
+            it != pimpl_->base.axis_angular_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "BASE: Angular axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->base.scale_angular_map["normal"][it->first]);
+        }
+      }
+
+      if (pimpl_->armCtrlStarted)
+      {
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_linear_map.begin();
+            it != pimpl_->arm.axis_linear_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "ARM: Linear axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->arm.scale_linear_map["normal"][it->first]);
+        }
+
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_angular_map.begin();
+            it != pimpl_->arm.axis_angular_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "ARM: Angular axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->arm.scale_angular_map["normal"][it->first]);
+        }
+      }
+
+
+    
+    ROS_INFO_COND_NAMED(pimpl_->armCtrlStarted, "TeleopTwistJoy",
+                          "The Control Mode for the Arm on ROS is currently set to %s.\n \
+                        Change this by pushing the \"SELECT\" Button on the controller.",
+                        pimpl_->arm.controllerStatus["joint"]=="active" ? "joint" : pimpl_->arm.controllerStatus["twist"]=="active" ? "twist" : "NONE");
+    }
+
+
+
     callback_handle = this->add_on_set_parameters_callback(param_callback);
   }
 
@@ -767,21 +796,22 @@ namespace teleop_twist_joy
     }
   }
 
-  void TeleopTwistJoy::Impl::getControllerStates()
+  void TeleopTwistJoy::Impl::getArmControllerStates()
   {
     // Wait for service to be available
     if (!listCntrl_client_ptr_->wait_for_service(std::chrono::seconds(5))) {
-      RCLCPP_ERROR(parentNode->get_logger(), "Unable to find ControllerState service. Start ros2_control first.");
+      RCLCPP_ERROR(parentNode->get_logger(), "Unable to find ControllerState service. ros2_control may not be running or arm is not connected.");
+      armCtrlStarted = false;
       return;
     }
-
+    armCtrlStarted = true;
     auto arm_listControllers_request = std::make_shared<controller_manager_msgs::srv::ListControllers::Request>();
 
     auto future = listCntrl_client_ptr_->async_send_request(arm_listControllers_request, 
-                std::bind(&TeleopTwistJoy::Impl::getControllerStates_callback, this, std::placeholders::_1));
+                std::bind(&TeleopTwistJoy::Impl::getArmControllerStates_callback, this, std::placeholders::_1));
   }
 
-  void TeleopTwistJoy::Impl::getControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future)
+  void TeleopTwistJoy::Impl::getArmControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future)
   {
     auto response = future.get();
     
@@ -1096,7 +1126,7 @@ namespace teleop_twist_joy
     // [On Button Release]
     if (joy_msg_buttons_prev[arm.toggle_control_mode_button] == 1 && joy_msg->buttons[arm.toggle_control_mode_button] == 0)
     {
-      // getControllerStates(); // Get latest controller states.
+      // getArmControllerStates(); // Get latest controller states.
       std::vector<std::string> start_controller;
       std::vector<std::string> stop_controller;
       bool controllerRequestResolved;
@@ -1144,7 +1174,7 @@ namespace teleop_twist_joy
 
         RCLCPP_INFO(parentNode->get_logger(), "Async request to switch from *%s* to *%s* has been sent.", stop_controller[0].c_str(), start_controller[0].c_str());
 
-        getControllerStates();
+        getArmControllerStates();
       }
     }
 
