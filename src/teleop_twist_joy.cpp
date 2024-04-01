@@ -622,8 +622,7 @@ namespace teleop_twist_joy
       
       // Print out the hardware the user is controlling
       ROS_INFO_NAMED("TeleopTwistJoy",
-                          "You are currently controlling the %s.\n \
-                        \t\tChange this by pushing the \"HOME\" Button on the controller.",
+                          "### \t You are currently controlling the %s. Change this by pushing the \"HOME\" Button on the controller.\t ###",
                         pimpl_->arm_jogged==true ? "ARM" : "BASE");
 
       // Always prints by default for the BASE
@@ -663,8 +662,7 @@ namespace teleop_twist_joy
 
     
     ROS_INFO_COND_NAMED(pimpl_->armCtrlStarted, "TeleopTwistJoy",
-                          "The Control Mode for the Arm on ROS is currently set to %s.\n \
-                        Change this by pushing the \"SELECT\" Button on the controller.",
+                          "### /t The Control Mode for the Arm on ROS is currently set to %s. Change this by pushing the \"SELECT\" Button on the controller.\t ###",
                         pimpl_->arm.controllerStatus["joint"]=="active" ? "joint" : pimpl_->arm.controllerStatus["twist"]=="active" ? "twist" : "NONE");
     }
 
@@ -800,7 +798,7 @@ namespace teleop_twist_joy
   {
     // Wait for service to be available
     if (!listCntrl_client_ptr_->wait_for_service(std::chrono::seconds(5))) { // Consider changing this to 3 seconds for faster startup of node.
-      RCLCPP_ERROR(parentNode->get_logger(), "Unable to find ControllerState service. ros2_control may not be running or arm is not connected.");
+      RCLCPP_WARN(parentNode->get_logger(), "Unable to find ControllerState service. ros2_control may not be running or the ARM is not connected.");
       armCtrlStarted = false;
       return;
     }
@@ -1114,9 +1112,39 @@ namespace teleop_twist_joy
       cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
     }
 
+    // CMD_VEL mapping based on E-Stop State
+    {
+      if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
+      {
+        sent_disable_msg = false;
+        toggleEmergencyStop(sent_disable_msg);
+        if (armCtrlStarted && arm_jogged) {clearArmFaults();}
+      }
+      else if (joy_msg_buttons_prev[activate_estop_button] == 0 && joy_msg->buttons[activate_estop_button] == 1)
+      {
+        if (!sent_disable_msg)
+        {
+          // Initializes with zeros by default.
+          auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+          auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
+          cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
+          cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
+          sent_disable_msg = true;
+        }
+        toggleEmergencyStop(sent_disable_msg);
+      }
+      else
+      {
+        if (!sent_disable_msg)
+        {
+          sendCmdVelMsg(joy_msg, "normal");
+        }
+      }
+    }
+
     // Toggles between the 2 layers of the Face Buttons (A, B, X, Y) for presets
     // On button release
-    if (joy_msg_buttons_prev[toggle_preset_layer_button] == 1 && joy_msg->buttons[toggle_preset_layer_button] == 0)
+    if (armCtrlStarted && arm_jogged && (joy_msg_buttons_prev[toggle_preset_layer_button] == 1 && joy_msg->buttons[toggle_preset_layer_button] == 0))
     {
       presetLayerToggled = !presetLayerToggled;
       parentNode->set_parameter(rclcpp::Parameter("presetLayerToggled", presetLayerToggled));
@@ -1124,7 +1152,7 @@ namespace teleop_twist_joy
 
     // Switches control modes for controlling the arm (e.g. between twist and joint)
     // [On Button Release]
-    if (joy_msg_buttons_prev[arm.toggle_control_mode_button] == 1 && joy_msg->buttons[arm.toggle_control_mode_button] == 0)
+    if (armCtrlStarted  && arm_jogged&& (joy_msg_buttons_prev[arm.toggle_control_mode_button] == 1 && joy_msg->buttons[arm.toggle_control_mode_button] == 0))
     {
       // getArmControllerStates(); // Get latest controller states.
       std::vector<std::string> start_controller;
@@ -1179,47 +1207,18 @@ namespace teleop_twist_joy
     }
 
     // Switches between cartesian and angular joystick control
-    if (joy_msg_buttons_prev[XYTwist_toggle] == 0 && joy_msg->buttons[XYTwist_toggle] == 1)
+    if (armCtrlStarted && arm_jogged && (joy_msg_buttons_prev[XYTwist_toggle] == 0 && joy_msg->buttons[XYTwist_toggle] == 1))
     {
       XYTwist_toggled = !XYTwist_toggled;
       // RCLCPP_INFO(parentNode->get_logger(), "XYTwist_toggled is set and is = %s", XYTwist_toggled ? "True" : "False");
     }
-    if (joy_msg_buttons_prev[ZTwist_toggle] == 0 && joy_msg->buttons[ZTwist_toggle] == 1)
+    if (armCtrlStarted && arm_jogged && (joy_msg_buttons_prev[ZTwist_toggle] == 0 && joy_msg->buttons[ZTwist_toggle] == 1))
     {
       ZTwist_toggled = !ZTwist_toggled;
     }
 
-    // CMD_VEL mapping based on E-Stop State
-    {
-      if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
-      {
-        sent_disable_msg = false;
-        toggleEmergencyStop(sent_disable_msg);
-        clearArmFaults();
-      }
-      else if (joy_msg_buttons_prev[activate_estop_button] == 0 && joy_msg->buttons[activate_estop_button] == 1)
-      {
-        if (!sent_disable_msg)
-        {
-          // Initializes with zeros by default.
-          auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-          auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
-          cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
-          cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
-          sent_disable_msg = true;
-        }
-        toggleEmergencyStop(sent_disable_msg);
-      }
-      else
-      {
-        if (!sent_disable_msg)
-        {
-          sendCmdVelMsg(joy_msg, "normal");
-        }
-      }
-    }
-
     // Handles logic for opening and closing the gripper with the triggers
+    if(armCtrlStarted && arm_jogged)
     {
       auto close_trigger_val = joy_msg->axes[arm.gripper_map.at("close")];
       auto open_trigger_val = joy_msg->axes[arm.gripper_map.at("open")];
@@ -1249,9 +1248,10 @@ namespace teleop_twist_joy
           send_goal(goal_msg);
         }
       }
-    }
+      }
 
     // Handles logic for setting presets on the Arm
+    if(armCtrlStarted && arm_jogged)
     {
       std::string presetName;
       int startInd;
@@ -1299,7 +1299,7 @@ namespace teleop_twist_joy
     std::vector<std::string> twist_AngComps = {"yaw", "pitch", "roll"}; // Angular components
     // Handles speed limit changes with the D-PAD (Up/Down)
     // If the ARM has been selected for control (arm_jogged = true)
-    if (arm_jogged)
+    if (armCtrlStarted && arm_jogged)
     {
       #define abs(val) std::abs(val)
 
