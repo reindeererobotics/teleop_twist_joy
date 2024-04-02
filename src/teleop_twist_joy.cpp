@@ -88,8 +88,8 @@ namespace teleop_twist_joy
 
     trajectory_msgs::msg::JointTrajectory::SharedPtr prepArmActionGoal(std::string presetName);
 
-    void getControllerStates();
-    void getControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future);
+    void getArmControllerStates();
+    void getArmControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future);
     
     void switchControllerState_callback(const rclcpp::Client<controller_manager_msgs::srv::SwitchController>::SharedFuture future);
 
@@ -139,22 +139,23 @@ namespace teleop_twist_joy
       std::map<std::string, int64_t> axis_angular_map;
       std::map<std::string, std::map<std::string, double>> scale_angular_map;
 
-      double maxAngVel = 1; // The maximum angular velocity in degs per second
-      double maxLinVel = 1;  // The maximum linear twist velocity - // Setting this to 1 instead of 0.5m/s since 
+      double maxLinVel = 1.5;  // (Absolute value only) The maximum linear twist velocity - // Setting this to 1 to signify 100% 
+      double maxAngVel = 0.6; // (Absolute value only) The maximum angular velocity in degs per second
 
       std::map<std::string, double> speedDelta = {
         {"linear", 0.1},
         {"angular", 0.1}
-      };
+      }; //(Absolute value only) 
       std::map<std::string, double> minSpeeds = {
         {"linear", 0.01},
         {"angular", 0.01}
-      };
+      }; //(Absolute value only) 
 
     } base;
 
     struct
     {
+      bool connected = false;
       rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr jointState_sub;
 
       std::map<std::string, int64_t> axis_linear_map;
@@ -226,6 +227,7 @@ namespace teleop_twist_joy
     bool sent_disable_msg;
     bool running_gripper_action;
     bool running_arm_action;
+    bool armCtrlStarted = false;
     double gripper_pos;
     
   };
@@ -261,7 +263,7 @@ namespace teleop_twist_joy
       pimpl_->deactivate_estop_button = this->declare_parameter("deactivate_estop_button", 4);
       pimpl_->activate_estop_button = this->declare_parameter("activate_estop_button", 5);
 
-      pimpl_->arm_jogged = this->declare_parameter("arm_jogged", true);
+      pimpl_->arm_jogged = this->declare_parameter("arm_jogged", false);
       pimpl_->presetLayerToggled = this->declare_parameter("presetLayerToggled", false);
       pimpl_->jog_arm_button = this->declare_parameter("jog_arm_button", 10);
 
@@ -304,7 +306,7 @@ namespace teleop_twist_joy
           {"z", 0.0},
       };
       this->declare_parameters("arm_scale_linear", default_scale_linear_normal_map);
-      this->get_parameters("arm_scale_linear", pimpl_->arm.scale_linear_map["normal"]);
+      this->get_parameters("arm_scale_linear", pimpl_->arm.scale_linear_map["normal"]); // NOTE: "normal" here does not have any meaning and can be removed when convenient.
       this->declare_parameters("base_scale_linear", default_scale_linear_normal_map);
       this->get_parameters("base_scale_linear", pimpl_->base.scale_linear_map["normal"]);
 
@@ -360,43 +362,9 @@ namespace teleop_twist_joy
       this->declare_parameters("arm_preset_buttons", default_preset_button_map);
       this->get_parameters("arm_preset_buttons", pimpl_->arm.preset_pos_button_map);
 
-      pimpl_->getControllerStates(); // Get the initial controller states.
+      pimpl_->getArmControllerStates(); // Get the initial controller states.
     }
 
-    // Write some info to console for the user
-    {
-      ROS_INFO_COND_NAMED(pimpl_->activate_estop_button >= 0, "TeleopTwistJoy",
-                          "Default button to Activate ESTOP [Right Bumper] %" PRId64 ".", pimpl_->activate_estop_button);
-      ROS_INFO_COND_NAMED(pimpl_->deactivate_estop_button >= 0, "TeleopTwistJoy",
-                          "Default button to Deactivate ESTOP [Left Bumper] %" PRId64 ".", pimpl_->deactivate_estop_button);
-
-      for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_linear_map.begin();
-           it != pimpl_->arm.axis_linear_map.end(); ++it)
-      {
-        ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "Linear axis %s on %" PRId64 " at scale %f.",
-                            it->first.c_str(), it->second, pimpl_->arm.scale_linear_map["normal"][it->first]);
-        // ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
-        //   "Turbo for linear axis %s is scale %f.", it->first.c_str(), pimpl_->scale_linear_map["turbo"][it->first]);
-      }
-
-      for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_angular_map.begin();
-           it != pimpl_->arm.axis_angular_map.end(); ++it)
-      {
-        ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "Angular axis %s on %" PRId64 " at scale %f.",
-                            it->first.c_str(), it->second, pimpl_->arm.scale_angular_map["normal"][it->first]);
-        // ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
-        //   "Turbo for angular axis %s is scale %f.", it->first.c_str(), pimpl_->scale_angular_map["turbo"][it->first]);
-      }
-    }
-
-    pimpl_->sent_disable_msg = false;
-    pimpl_->running_gripper_action = false;
-    pimpl_->running_arm_action = false;
-
-    ROS_INFO_NAMED("TeleopTwistJoy",
-                          "The Control Mode for the Arm on ROS is currently set to %s.\n \
-                        Change this by pushing the \"SELECT\" Button on the controller.",
-                        pimpl_->arm.controllerStatus["joint"]=="active" ? "joint" : pimpl_->arm.controllerStatus["twist"]=="active" ? "twist" : "NONE");
 
     auto param_callback =
         [this](std::vector<rclcpp::Parameter> parameters)
@@ -640,6 +608,66 @@ namespace teleop_twist_joy
       return result;
     };
 
+    pimpl_->sent_disable_msg = false;
+    pimpl_->running_gripper_action = false;
+    pimpl_->running_arm_action = false;
+
+
+    // Print some info to console for the user
+    {
+      ROS_INFO_COND_NAMED(pimpl_->activate_estop_button >= 0, "TeleopTwistJoy",
+                          "Default button to Activate ESTOP [Right Bumper] %" PRId64 ".", pimpl_->activate_estop_button);
+      ROS_INFO_COND_NAMED(pimpl_->deactivate_estop_button >= 0, "TeleopTwistJoy",
+                          "Default button to Deactivate ESTOP [Left Bumper] %" PRId64 ".", pimpl_->deactivate_estop_button);
+      
+      // Print out the hardware the user is controlling
+      ROS_INFO_NAMED("TeleopTwistJoy",
+                          "### \t You are currently controlling the %s. Change this by pushing the \"HOME\" Button on the controller.\t ###",
+                        pimpl_->arm_jogged==true ? "ARM" : "BASE");
+
+      // Always prints by default for the BASE
+      {
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->base.axis_linear_map.begin();
+            it != pimpl_->base.axis_linear_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "BASE: Linear axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->base.scale_linear_map["normal"][it->first]);
+        }
+
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->base.axis_angular_map.begin();
+            it != pimpl_->base.axis_angular_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "BASE: Angular axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->base.scale_angular_map["normal"][it->first]);
+        }
+      }
+
+      if (pimpl_->armCtrlStarted)
+      {
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_linear_map.begin();
+            it != pimpl_->arm.axis_linear_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "ARM: Linear axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->arm.scale_linear_map["normal"][it->first]);
+        }
+
+        for (std::map<std::string, int64_t>::iterator it = pimpl_->arm.axis_angular_map.begin();
+            it != pimpl_->arm.axis_angular_map.end(); ++it)
+        {
+          ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "ARM: Angular axis %s on %" PRId64 " at scale %f.",
+                              it->first.c_str(), it->second, pimpl_->arm.scale_angular_map["normal"][it->first]);
+        }
+      }
+
+
+    
+    ROS_INFO_COND_NAMED(pimpl_->armCtrlStarted, "TeleopTwistJoy",
+                          "### /t The Control Mode for the Arm on ROS is currently set to %s. Change this by pushing the \"SELECT\" Button on the controller.\t ###",
+                        pimpl_->arm.controllerStatus["joint"]=="active" ? "joint" : pimpl_->arm.controllerStatus["twist"]=="active" ? "twist" : "NONE");
+    }
+
+
+
     callback_handle = this->add_on_set_parameters_callback(param_callback);
   }
 
@@ -766,21 +794,22 @@ namespace teleop_twist_joy
     }
   }
 
-  void TeleopTwistJoy::Impl::getControllerStates()
+  void TeleopTwistJoy::Impl::getArmControllerStates()
   {
     // Wait for service to be available
-    if (!listCntrl_client_ptr_->wait_for_service(std::chrono::seconds(5))) {
-      RCLCPP_ERROR(parentNode->get_logger(), "Unable to find ControllerState service. Start ros2_control first.");
+    if (!listCntrl_client_ptr_->wait_for_service(std::chrono::seconds(5))) { // Consider changing this to 3 seconds for faster startup of node.
+      RCLCPP_WARN(parentNode->get_logger(), "Unable to find ControllerState service. ros2_control may not be running or the ARM is not connected.");
+      armCtrlStarted = false;
       return;
     }
-
+    armCtrlStarted = true;
     auto arm_listControllers_request = std::make_shared<controller_manager_msgs::srv::ListControllers::Request>();
 
     auto future = listCntrl_client_ptr_->async_send_request(arm_listControllers_request, 
-                std::bind(&TeleopTwistJoy::Impl::getControllerStates_callback, this, std::placeholders::_1));
+                std::bind(&TeleopTwistJoy::Impl::getArmControllerStates_callback, this, std::placeholders::_1));
   }
 
-  void TeleopTwistJoy::Impl::getControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future)
+  void TeleopTwistJoy::Impl::getArmControllerStates_callback(const rclcpp::Client<controller_manager_msgs::srv::ListControllers>::SharedFuture future)
   {
     auto response = future.get();
     
@@ -1083,9 +1112,39 @@ namespace teleop_twist_joy
       cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
     }
 
+    // CMD_VEL mapping based on E-Stop State
+    {
+      if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
+      {
+        sent_disable_msg = false;
+        toggleEmergencyStop(sent_disable_msg);
+        if (armCtrlStarted && arm_jogged) {clearArmFaults();}
+      }
+      else if (joy_msg_buttons_prev[activate_estop_button] == 0 && joy_msg->buttons[activate_estop_button] == 1)
+      {
+        if (!sent_disable_msg)
+        {
+          // Initializes with zeros by default.
+          auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+          auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
+          cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
+          cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
+          sent_disable_msg = true;
+        }
+        toggleEmergencyStop(sent_disable_msg);
+      }
+      else
+      {
+        if (!sent_disable_msg)
+        {
+          sendCmdVelMsg(joy_msg, "normal");
+        }
+      }
+    }
+
     // Toggles between the 2 layers of the Face Buttons (A, B, X, Y) for presets
     // On button release
-    if (joy_msg_buttons_prev[toggle_preset_layer_button] == 1 && joy_msg->buttons[toggle_preset_layer_button] == 0)
+    if (armCtrlStarted && arm_jogged && (joy_msg_buttons_prev[toggle_preset_layer_button] == 1 && joy_msg->buttons[toggle_preset_layer_button] == 0))
     {
       presetLayerToggled = !presetLayerToggled;
       parentNode->set_parameter(rclcpp::Parameter("presetLayerToggled", presetLayerToggled));
@@ -1093,9 +1152,9 @@ namespace teleop_twist_joy
 
     // Switches control modes for controlling the arm (e.g. between twist and joint)
     // [On Button Release]
-    if (joy_msg_buttons_prev[arm.toggle_control_mode_button] == 1 && joy_msg->buttons[arm.toggle_control_mode_button] == 0)
+    if (armCtrlStarted  && arm_jogged&& (joy_msg_buttons_prev[arm.toggle_control_mode_button] == 1 && joy_msg->buttons[arm.toggle_control_mode_button] == 0))
     {
-      // getControllerStates(); // Get latest controller states.
+      // getArmControllerStates(); // Get latest controller states.
       std::vector<std::string> start_controller;
       std::vector<std::string> stop_controller;
       bool controllerRequestResolved;
@@ -1143,52 +1202,23 @@ namespace teleop_twist_joy
 
         RCLCPP_INFO(parentNode->get_logger(), "Async request to switch from *%s* to *%s* has been sent.", stop_controller[0].c_str(), start_controller[0].c_str());
 
-        getControllerStates();
+        getArmControllerStates();
       }
     }
 
     // Switches between cartesian and angular joystick control
-    if (joy_msg_buttons_prev[XYTwist_toggle] == 0 && joy_msg->buttons[XYTwist_toggle] == 1)
+    if (armCtrlStarted && arm_jogged && (joy_msg_buttons_prev[XYTwist_toggle] == 0 && joy_msg->buttons[XYTwist_toggle] == 1))
     {
       XYTwist_toggled = !XYTwist_toggled;
       // RCLCPP_INFO(parentNode->get_logger(), "XYTwist_toggled is set and is = %s", XYTwist_toggled ? "True" : "False");
     }
-    if (joy_msg_buttons_prev[ZTwist_toggle] == 0 && joy_msg->buttons[ZTwist_toggle] == 1)
+    if (armCtrlStarted && arm_jogged && (joy_msg_buttons_prev[ZTwist_toggle] == 0 && joy_msg->buttons[ZTwist_toggle] == 1))
     {
       ZTwist_toggled = !ZTwist_toggled;
     }
 
-    // CMD_VEL mapping based on E-Stop State
-    {
-      if (joy_msg_buttons_prev[deactivate_estop_button] == 0 && joy_msg->buttons[deactivate_estop_button] == 1)
-      {
-        sent_disable_msg = false;
-        toggleEmergencyStop(sent_disable_msg);
-        clearArmFaults();
-      }
-      else if (joy_msg_buttons_prev[activate_estop_button] == 0 && joy_msg->buttons[activate_estop_button] == 1)
-      {
-        if (!sent_disable_msg)
-        {
-          // Initializes with zeros by default.
-          auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-          auto cmd_vel_msg2 = std::make_unique<geometry_msgs::msg::Twist>();
-          cmd_vel_arm_pub->publish(std::move(cmd_vel_msg));
-          cmd_vel_base_pub->publish(std::move(cmd_vel_msg2));
-          sent_disable_msg = true;
-        }
-        toggleEmergencyStop(sent_disable_msg);
-      }
-      else
-      {
-        if (!sent_disable_msg)
-        {
-          sendCmdVelMsg(joy_msg, "normal");
-        }
-      }
-    }
-
     // Handles logic for opening and closing the gripper with the triggers
+    if(armCtrlStarted && arm_jogged)
     {
       auto close_trigger_val = joy_msg->axes[arm.gripper_map.at("close")];
       auto open_trigger_val = joy_msg->axes[arm.gripper_map.at("open")];
@@ -1218,9 +1248,10 @@ namespace teleop_twist_joy
           send_goal(goal_msg);
         }
       }
-    }
+      }
 
     // Handles logic for setting presets on the Arm
+    if(armCtrlStarted && arm_jogged)
     {
       std::string presetName;
       int startInd;
@@ -1264,182 +1295,183 @@ namespace teleop_twist_joy
       // }
     }
     
-    std::vector<std::string> twist_LinComps = {"x", "y", "z"};
-    std::vector<std::string> twist_AngComps = {"yaw", "pitch", "roll"};
+    std::vector<std::string> twist_LinComps = {"x", "y", "z"}; // Linear components
+    std::vector<std::string> twist_AngComps = {"yaw", "pitch", "roll"}; // Angular components
     // Handles speed limit changes with the D-PAD (Up/Down)
-    if (arm_jogged)
+    // If the ARM has been selected for control (arm_jogged = true)
+    if (armCtrlStarted && arm_jogged)
     {
+      #define abs(val) std::abs(val)
+
+      // If the UP arrow on the dpad is pressed (on press)
       if (joy_msg_axes_prev[speed_changer_dpad] == 0 && joy_msg->axes[speed_changer_dpad] == 1)
       {
         // Linear
         for (std::string lin_comp : twist_LinComps)
         {
-          // Only increase the limit if you can increase it without going over the maximum, else make it the max
-          if (std::abs(arm.scale_linear_map["normal"][lin_comp]) <= (arm.maxLinVel - arm.speedDelta["linear"]))
+          // Only increase the limit if you can increase it without going over the maximum
+          if (abs(arm.scale_linear_map["normal"][lin_comp]) <= (abs(arm.maxLinVel) - abs(arm.speedDelta["linear"])))
           {
-            // If the twist component scale is negative, increase it in the negative direction
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] - arm.speedDelta["linear"]; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] + arm.speedDelta["linear"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * (abs(arm.scale_linear_map["normal"][lin_comp]) + abs(arm.speedDelta["linear"]));
           }
+          // If the scale_linear_map is near the max value, make it the max value
           else 
           {
-            // If the twist component scale is negative, make it the negative max vel else positive
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = -arm.maxLinVel; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.maxLinVel; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * abs(arm.maxLinVel);
           }
         }
         // Angular
         for (std::string ang_comp : twist_AngComps)
         {
           // Only increase the limit if you can increase it without going over the maximum, else make it the max
-          if (std::abs(arm.scale_angular_map["normal"][ang_comp]) <= (arm.maxAngVel - arm.speedDelta["angular"]))
+          if (abs(arm.scale_angular_map["normal"][ang_comp]) <= (abs(arm.maxAngVel) - abs(arm.speedDelta["angular"])))
           {
-            // If the twist component scale is negative, increase it in the negative direction
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] - arm.speedDelta["angular"]; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] + arm.speedDelta["angular"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * (abs(arm.scale_angular_map["normal"][ang_comp]) + abs(arm.speedDelta["angular"]));
           }
           else 
           {
-            // If the twist component scale is negative, make it the negative max vel else positive
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = -arm.maxAngVel; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.maxAngVel; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * abs(arm.maxAngVel);
           }
         }
       }
+      // If the DOWN arrow on the dpad is pressed (on press)
       else if (joy_msg_axes_prev[speed_changer_dpad] == 0 && joy_msg->axes[speed_changer_dpad] == -1)
       {
         // Linear
         for (std::string lin_comp : twist_LinComps)
         {
-          // Only decrease the limit if you can decrease it without going less than zero, else make it zero
-          if (std::abs(arm.scale_linear_map["normal"][lin_comp]) >= arm.speedDelta["linear"])
+          // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
+          if ((abs(arm.scale_linear_map["normal"][lin_comp]) - abs(arm.speedDelta["linear"])) > abs(arm.speedDelta["linear"]))
           {
-            // If the twist component scale is negative, decrease it in the negative direction
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] + arm.speedDelta["linear"]; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.scale_linear_map["normal"][lin_comp] - arm.speedDelta["linear"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * (abs(arm.scale_linear_map["normal"][lin_comp]) - abs(arm.speedDelta["linear"]));
           }
+          // If the scale_linear_map is near the min value, make it the minimum absolute limit
           else 
           {
-            // If the twist component scale is negative, make it a small number
-            if (arm.scale_linear_map["normal"][lin_comp] < 0)
-            { arm.scale_linear_map["normal"][lin_comp] = -arm.minSpeeds["linear"]; }
-            else
-            { arm.scale_linear_map["normal"][lin_comp] = arm.minSpeeds["linear"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_linear_map["normal"][lin_comp] < 0){ sign = -1.0; }
+            arm.scale_linear_map["normal"][lin_comp] = sign * abs(arm.minSpeeds["linear"]);
           }
         }
         // Angular
         for (std::string ang_comp : twist_AngComps)
         {
-          // Only increase the limit if you can increase it without going over the maximum, else make it the max
-          if (std::abs(arm.scale_angular_map["normal"][ang_comp]) <= arm.speedDelta["angular"])
+          // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
+          if ((abs(arm.scale_angular_map["normal"][ang_comp]) - abs(arm.speedDelta["angular"])) > abs(arm.speedDelta["angular"]))
           {
-            // If the twist component scale is negative, increase it in the negative direction
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] + arm.speedDelta["angular"]; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.scale_angular_map["normal"][ang_comp] - arm.speedDelta["angular"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * (abs(arm.scale_angular_map["normal"][ang_comp]) - abs(arm.speedDelta["angular"]));
           }
+          // If the scale_angular_map is near the min value, make it the minimum absolute limit
           else 
           {
-            // If the twist component scale is negative, make it the negative max vel else positive
-            if (arm.scale_angular_map["normal"][ang_comp] < 0)
-            { arm.scale_angular_map["normal"][ang_comp] = -arm.minSpeeds["angular"]; }
-            else
-            { arm.scale_angular_map["normal"][ang_comp] = arm.minSpeeds["angular"]; }
+            double sign = 1.0;
+            // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+            if (arm.scale_angular_map["normal"][ang_comp] < 0){ sign = -1.0; }
+            arm.scale_angular_map["normal"][ang_comp] = sign * abs(arm.minSpeeds["angular"]);
           }
         }
       }
     }
+    // If the BASE has been selected for control (arm_jogged = false)
     else
     {
+      #define abs(val) std::abs(val)
+
+      // If the UP arrow on the dpad is pressed (on press)
       if (joy_msg_axes_prev[speed_changer_dpad] == 0 && joy_msg->axes[speed_changer_dpad] == 1)
       {
         // Linear
-        // Only increase the limit if you can increase it without going over the maximum, else make it the max
-        if (std::abs(base.scale_linear_map["normal"]["x"]) <= (base.maxLinVel - base.speedDelta["linear"]))
+        // Only increase the limit if you can increase it without going over the maximum
+        if (abs(base.scale_linear_map["normal"]["x"]) <= (abs(base.maxLinVel) - abs(base.speedDelta["linear"])))
         {
-          // If the twist component scale is negative, increase it in the negative direction
-          if (base.scale_linear_map["normal"]["x"] < 0)
-          { base.scale_linear_map["normal"]["x"] = base.scale_linear_map["normal"]["x"] - base.speedDelta["linear"]; }
-          else
-          { base.scale_linear_map["normal"]["x"] = base.scale_linear_map["normal"]["x"] + base.speedDelta["linear"]; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+          if (base.scale_linear_map["normal"]["x"] < 0){ sign = -1.0; }
+          base.scale_linear_map["normal"]["x"] = sign * (abs(base.scale_linear_map["normal"]["x"]) + abs(base.speedDelta["linear"]));
         }
+        // If the scale_linear_map is near the max value, make it the max value
         else
         {
-          // If the twist component scale is negative, make it the negative max vel else positive
-          if (base.scale_linear_map["normal"]["x"] < 0)
-          { base.scale_linear_map["normal"]["x"] = -base.maxLinVel; }
-          else
-          { base.scale_linear_map["normal"]["x"] = base.maxLinVel; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+          if (base.scale_linear_map["normal"]["x"] < 0){ sign = -1.0; }
+          base.scale_linear_map["normal"]["x"] = sign * abs(base.maxLinVel); 
         }
 
         // Angular
-        // Only increase the limit if you can increase it without going over the maximum, else make it the max
-        if (std::abs(base.scale_angular_map["normal"]["yaw"]) <= (base.maxAngVel - base.speedDelta["angular"]))
+        // Only increase the limit if you can increase it without going over the maximum
+        if (abs(base.scale_angular_map["normal"]["yaw"]) <= (abs(base.maxAngVel) - abs(base.speedDelta["angular"])))
         {
-          // If the twist component scale is negative, increase it in the negative direction
-          if (arm.scale_angular_map["normal"]["yaw"] < 0)
-          { base.scale_angular_map["normal"]["yaw"] = base.scale_angular_map["normal"]["yaw"] - base.speedDelta["angular"];}
-          else
-          { base.scale_angular_map["normal"]["yaw"] = base.scale_angular_map["normal"]["yaw"] + base.speedDelta["angular"]; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+          if (base.scale_angular_map["normal"]["yaw"] < 0){ sign = -1.0; }
+          base.scale_angular_map["normal"]["yaw"] = sign * (abs(base.scale_angular_map["normal"]["yaw"]) + abs(base.speedDelta["angular"]));
         }
+        // If the scale_angular_map is near the max value, make it the max value
         else
         {
-          // If the twist component scale is negative, make it the negative max vel else positive
-          if (base.scale_angular_map["normal"]["yaw"] < 0)
-          { base.scale_angular_map["normal"]["yaw"] = -base.maxAngVel; }
-          else
-          { base.scale_angular_map["normal"]["yaw"] = base.maxAngVel; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the increased abs calculation
+          if (base.scale_angular_map["normal"]["yaw"] < 0){ sign = -1.0; }
+          base.scale_angular_map["normal"]["yaw"] = sign * abs(base.maxAngVel);
         }
       }
+      // If the DOWN arrow on the dpad is pressed (on press)
       else if (joy_msg_axes_prev[speed_changer_dpad] == 0 && joy_msg->axes[speed_changer_dpad] == -1)
       {
         // Linear
-        // Only decrease the limit if you can decrease it without going less than zero, else make it zero
-        if (std::abs(base.scale_linear_map["normal"]["x"]) >= base.speedDelta["linear"])
+        // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
+        if ((abs(base.scale_linear_map["normal"]["x"]) - abs(base.speedDelta["linear"])) > abs(base.speedDelta["linear"]))
         {
-          // If the twist component scale is negative, decrease it in the negative direction
-          if (base.scale_linear_map["normal"]["x"] < 0)
-          { base.scale_linear_map["normal"]["x"] = base.scale_linear_map["normal"]["x"] + base.speedDelta["linear"]; }
-          else
-          { base.scale_linear_map["normal"]["x"] = base.scale_linear_map["normal"]["x"] - base.speedDelta["linear"]; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+          if (base.scale_linear_map["normal"]["x"] < 0){ sign = -1.0; }
+          base.scale_linear_map["normal"]["x"] = sign * (abs(base.scale_linear_map["normal"]["x"]) - abs(base.speedDelta["linear"]));
         }
+        // If the scale_linear_map is near the min value, make it the minimum absolute limit
         else
         {
-          // If the twist component scale is negative, make it a small number
-          if (base.scale_linear_map["normal"]["x"] < 0)
-          { base.scale_linear_map["normal"]["x"] = -base.minSpeeds["linear"]; }
-          else
-          { base.scale_linear_map["normal"]["x"] = base.minSpeeds["linear"]; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+          if (base.scale_linear_map["normal"]["x"] < 0){ sign = -1.0; }
+          base.scale_linear_map["normal"]["x"] = sign * abs(base.minSpeeds["linear"]);
         }
 
         // Angular
-        // Only increase the limit if you can increase it without going over the maximum, else make it the max
-        if (std::abs(base.scale_angular_map["normal"]["yaw"]) <= base.speedDelta["angular"])
+        // Only decrease the limit if you can decrease it without going beyond the minimum absolute limit
+        if ((abs(base.scale_angular_map["normal"]["yaw"]) - abs(base.speedDelta["angular"])) > abs(base.speedDelta["angular"]))
         {
-          // If the twist component scale is negative, increase it in the negative direction
-          if (base.scale_angular_map["normal"]["yaw"] < 0)
-          { base.scale_angular_map["normal"]["yaw"] = base.scale_angular_map["normal"]["yaw"] + base.speedDelta["angular"]; }
-          else
-          { base.scale_angular_map["normal"]["yaw"] = base.scale_angular_map["normal"]["yaw"] - base.speedDelta["angular"]; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+          if (base.scale_angular_map["normal"]["yaw"] < 0){ sign = -1.0; }
+          base.scale_angular_map["normal"]["yaw"] = sign * (abs(base.scale_angular_map["normal"]["yaw"]) - abs(base.speedDelta["angular"]));
         }
+        // If the scale_angular_map is near the min value, make it the minimum absolute limit
         else
         {
-          // If the twist component scale is negative, make it the negative max vel else positive
-          if (base.scale_angular_map["normal"]["yaw"] < 0)
-          { base.scale_angular_map["normal"]["yaw"] = -base.minSpeeds["angular"]; }
-          else
-          { base.scale_angular_map["normal"]["yaw"] = base.minSpeeds["angular"]; }
+          double sign = 1.0;
+          // If the twist component scale is negative, apply the negative sign to the decreased abs calculation
+          if (base.scale_angular_map["normal"]["yaw"] < 0){ sign = -1.0; }
+          base.scale_angular_map["normal"]["yaw"] = sign * abs(base.minSpeeds["angular"]);
         }
       }
     }

@@ -1,3 +1,4 @@
+# **** NOTE: NOT READY FOR USE! A few parameters are commented out below. Confirm them before using for SAFETY.
 teleop_twist_joy_node:
   ros__parameters:
     arm_axis_linear:  # Left thumb stick vertical
@@ -5,15 +6,15 @@ teleop_twist_joy_node:
       y: 0
       z: 4
     arm_scale_linear:
-      x: 0.2 # - unitless?
-      y: 0.2
-      z: 0.2
+      x: 0.7
+      y: 0.7
+      z: 0.7
     arm_axis_angular:  # Left thumb stick horizontal
-      yaw: 3 # was 3
-      pitch: 1 # was 1 
-      roll: 0 # X  was 0
+      yaw: 3
+      pitch: 1
+      roll: 0
     arm_scale_angular:
-      yaw: -30.0 # Z - Deg/sec
+      yaw: -30.0
       pitch: 30.0 # Y
       roll: -30.0 # X
     arm_gripper: 
@@ -116,7 +117,7 @@ teleop_twist_joy_node:
         min: -0.0
         max: 0.0
     maxPresetDuration: 15 # in Seconds
-    toggle_control_mode_button: 6  # Button to switch between twist and joint control
+    # toggle_control_mode_button: 6  # Button to switch between twist and joint controllers for the arm 
 
 
     base_axis_linear:  # Left thumb stick vertical
@@ -128,12 +129,12 @@ teleop_twist_joy_node:
     base_scale_angular:
       yaw: -0.4
     
-    toggle_preset_layer_button: 7 # Button to Switch between the A, B, X, Y buttons used for presets
-    XYTwist_toggle: 8 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
-    ZTwist_toggle: 9 # Right joystick button to switch between controlling translation and rotation in the Z axes
+    # toggle_preset_layer_button: 7 # Button to Switch between the A, B, X, Y buttons used for presets (Start Button)
+    XYTwist_toggle: 9 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
+    ZTwist_toggle: 10 # Right joystick button to switch between controlling translation and rotation in the Z axes
       
-    jog_arm_button: 10  # home button. 
+    jog_arm_button: 8  # home button. 
     deactivate_estop_button: 4  # Left bumper button
     activate_estop_button: 5  # Right bumper button
 
-    speed_changer_dpad: 7 # D-PAD Up/Down to increase or decrease the linear and angular speeds to or from their max.
+    # speed_changer_dpad: 7 # D-PAD Up/Down to increase or decrease the linear and angular speeds to or from their max (Axis).
