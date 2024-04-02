@@ -14,7 +14,7 @@ def generate_launch_description():
     return launch.LaunchDescription([
         launch.actions.DeclareLaunchArgument('joy_vel_arm', default_value='cmd_vel_arm'),
         launch.actions.DeclareLaunchArgument('joy_vel_base', default_value='cmd_vel_base'),
-        launch.actions.DeclareLaunchArgument('joy_config', default_value='ps3'),
+        launch.actions.DeclareLaunchArgument('joy_config', default_value='gamesirT4pro'),
         launch.actions.DeclareLaunchArgument('joy_dev', default_value='/dev/input/js0'),
         launch.actions.DeclareLaunchArgument('config_filepath', default_value=[
             launch.substitutions.TextSubstitution(text=os.path.join(

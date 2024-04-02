@@ -1,0 +1,139 @@
+teleop_twist_joy_node:
+  ros__parameters:
+    arm_axis_linear:  # Left thumb stick vertical
+      x: 1
+      y: 0
+      z: 4
+    arm_scale_linear:
+      x: 0.2 # - unitless?
+      y: 0.2
+      z: 0.2
+    arm_axis_angular:  # Left thumb stick horizontal
+      yaw: 3 # was 3
+      pitch: 1 # was 1 
+      roll: 0 # X  was 0
+    arm_scale_angular:
+      yaw: -30.0 # Z - Deg/sec
+      pitch: 30.0 # Y
+      roll: -30.0 # X
+    arm_gripper: 
+      close: 2 # Left trigger
+      open: 5 # Right trigger
+    arm_preset_buttons:
+      retract: 0 # Preset Layer 1: "A" Button
+      home: 1 # Preset Layer 1: "B" Button
+      autoDoorBtnRHS: 2 # Preset Layer 1: "X" Button
+      doorKnockFwd: 3 # Preset Layer 1: "Y" Button
+      elevatorCallDownBtn: 0 # Preset Layer 2: "A" Button
+      elevatorCallUpBtn: 1 # Preset Layer 2: "B" Button
+      elevatorSelectFirst: 2 # Preset Layer 2: "X" Button
+      elevatorSelectSecond: 3 # Preset Layer 2: "Y" Button
+    arm_preset_pos: # All preset positions are in degrees
+      retract:
+        joint_1: 271.473        
+        joint_2: 353.419        
+        joint_3: 179.382        
+        joint_4: 214.479 # -145.521 #
+        joint_5: 2.921        
+        joint_6: 316.96  # -43.04 #       
+        joint_7: 90.702 
+      home:
+        joint_1: 0.0        
+        joint_2: 15.0        
+        joint_3: 180.0        
+        joint_4: 230.0        
+        joint_5: 0.0        
+        joint_6: 55.0        
+        joint_7: 90.0        
+      autoDoorBtnRHS:
+        joint_1: 85.450 # 94.691        
+        joint_2: 352.777 # 8.646        
+        joint_3: 178.161 # 176.208        
+        joint_4: 212.205 # 268.15        
+        joint_5: 353.165 # 357.604        
+        joint_6: 48.112 # 10.454        
+        joint_7: 87.087 # 92.717
+      doorKnockFwd:
+        joint_1: 359.99        
+        joint_2: 0.0        
+        joint_3: 0.0        
+        joint_4: 50.496        
+        joint_5: 359.141        
+        joint_6: 300.659        
+        joint_7: 267.249
+      elevatorCallDownBtn:
+        joint_1: 7.496        
+        joint_2: 1.911        
+        joint_3: 176.490       
+        joint_4: 246.186       
+        joint_5: 9.341        
+        joint_6: 26.081        
+        joint_7: 81.528
+      elevatorCallUpBtn:
+        joint_1: 13.61        
+        joint_2: 359.662        
+        joint_3: 174.247        
+        joint_4: 252.80        
+        joint_5: 25.23        
+        joint_6: 18.85        
+        joint_7: 65.67
+      elevatorSelectFirst:
+        joint_1: 81.93        
+        joint_2: 32.71        
+        joint_3: 193.13       
+        joint_4: 302.51        
+        joint_5: 79.31        
+        joint_6: 90.0        
+        joint_7: 3.735
+      elevatorSelectSecond:
+        joint_1: 88.63        
+        joint_2: 32.33        
+        joint_3: 193.37        
+        joint_4: 309.06        
+        joint_5: 78.38        
+        joint_6: 95.66        
+        joint_7: 356.44
+    arm_joint_limits: # in Degs, 0 = Inf
+      joint_1:
+        min: -0.0
+        max: 0.0
+      joint_2:
+        min: -128.9
+        max: 128.9
+      joint_3:
+        min: -0.0
+        max: 0.0
+      joint_4:
+        min: -147.8
+        max: 147.8
+      joint_5:
+        min: -0.0
+        max: 0.0
+      joint_6:
+        min: -120.3
+        max: 120.3
+      joint_7:
+        min: -0.0
+        max: 0.0
+    maxPresetDuration: 15 # in Seconds
+    toggle_control_mode_button: 6  # Button to switch between twist and joint controllers for the arm
+
+
+    base_axis_linear:  # Left thumb stick vertical
+      x: 1
+    base_scale_linear:
+      x: 0.7
+    base_axis_angular:  # Left thumb stick horizontal
+      yaw: 3
+    base_scale_angular:
+      yaw: -0.4
+    
+    toggle_preset_layer_button: 7 # Button to Switch between the A, B, X, Y buttons used for presets
+    XYTwist_toggle: 8 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
+    ZTwist_toggle: 9 # Right joystick button to switch between controlling translation and rotation in the Z axes
+      
+    jog_arm_button: 10  # home button. 
+    deactivate_estop_button: 4  # Left bumper button
+    activate_estop_button: 5  # Right bumper button
+
+    speed_changer_dpad: 7 # D-PAD Up/Down to increase or decrease the linear and angular speeds to or from their max (Axis).
