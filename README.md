@@ -8,29 +8,25 @@ This package converts joy messages to velocity and controller preset commands fo
 An illustration of the controller and button mapping can be found below and it's configuration in the config folder. The images below are based on the GameSir joystick controller(and the `gamesirT4pro.config.yaml` config file).
 
 
-## Key Binding of GameSir to "joy" topic
-<figure align="center">
+## Key Binding of GameSir to `joy` topic
+<p align="center">
   <img src="./images/GameSir_ControllerBinding.png" style="width: 30%"
     alt="Image showing the key bindings of the GameSir to the 'joy' topic">
-</figure>
+</p>
 
 
 
-## Default teleop control scheme
-<figure align="center">
+## Default Teleop Control Scheme
+<p align="center">
   <img src="./images/GameSir_ControllerMap.png" style="width: 40%"
-    alt="Image showing the labelled keys of all buttons and axes of the GameSir T4Pro">
-  <figcaption>Key Labels of <a href="https://cdn.shopify.com/s/files/1/2241/8433/files/T4_Pro_T4_Pro_SE_User_Manual.pdf?v=1676270926">GameSir T4Pro controller</a></figcaption>
-</figure> 
+    alt="Image showing the labelled keys of all buttons and axes of the GameSir T4Pro"><br>
+  Key Labels of <a href="https://cdn.shopify.com/s/files/1/2241/8433/files/T4_Pro_T4_Pro_SE_User_Manual.pdf?v=1676270926">GameSir T4Pro controller</a>
+</p> 
 
-<style>
-  th {
-    text-align: center;
-  }
-</style>
+
 <table align="center">
 <tr><th>BASE Control</th><th>ARM Control</th></tr>
-<tr vertical-align:top><td valign="top">
+<tr><td valign="top">
 
 Key Label | Function
 ---|---
@@ -39,7 +35,7 @@ K "LB" | Deactivate E-Stop
 D "Home" | Toggle between the Arm & Base Control
 B [UP] | *Increase* the Max Linear and Angular Speeds
 B [DOWN] | *Decrease* the Max Linear and Angular Speeds
- | 
+-- | --
 A [UP] | Move Forward 
 A [DOWN] | Move Backwards
 F [LEFT] | Turn Left
@@ -54,27 +50,27 @@ K "LB" | Deactivate E-Stop
 D "Home" | Toggle between the Arm & Base Control
 B [UP] | *Increase* the Max Linear and Angular Speeds
 B [DOWN] | *Decrease* the Max Linear and Angular Speeds
- | 
+-- | --
 N "RT" | Open the Gripper 
 M "LT" | Close the Gripper 
 [Coordinate Sys] |  <img src="./images/Gen3_Arm_CoordinateSys.png" style="width: 50%">
 A [BUTTON] | Toggle between End-Effector (EE) Translation (X & Y) & Rotation (X & Z)
 F [BUTTON] | Toggle between End-Effector (EE) Translation (Z) & Rotation (Y)
- | 
+-- | --
 A [UP] | + X Translation [Forward] 
 A [DOWN] | - X Translation [Backward]
 A [LEFT] | + Y Translation [Left] 
 A [RIGHT] | - Y Translation [Right]
 F [UP] | + Z Translation [Up] 
 F [DOWN] | - Z Translation [Down]
- | 
+-- | --
 A [UP] (with button toggled) | + X Rotation [Pitch Up] 
 A [DOWN] (with button toggled) | - X Rotation [Pitch Down]
 A [LEFT] (with button toggled) | + Z Rotation [Roll Left] 
 A [RIGHT] (with button toggled) | - Z Rotation [Roll Right]
 F [LEFT] (with button toggled) | + Y Rotation [Yaw Left] 
 F [RIGHT] (with button toggled) | - Y Rotation [Yaw Right]
- | 
+-- | --
 C "Select" | Toggle between twist controller and Joint controller (used for position presets)
 E "Start" | Toggle between preset layers. There are 2 layers of pose presets for the ABXY buttons.
 G "A,B,X,Y" | Preset Selectors. Each button is mapped to a preset pose.
@@ -98,6 +94,10 @@ The package comes with the `teleop_node` that republishes `sensor_msgs/msg/Joy` 
   - Command velocity messages for the BASE arising from Joystick commands.
 
 ## Parameters
+<details>
+
+<summary>ROS Parameters</summary>
+
 `<device> = "arm" or "base"`
 - `<device>_axis_linear.<axis>`
   - Joystick axis used for linear movement control.
@@ -155,6 +155,7 @@ The package comes with the `teleop_node` that republishes `sensor_msgs/msg/Joy` 
 - `speed_changer_dpad (int, default: see config file)`
   - Joystick axis used for changing the manimum speed of all twist components. Only changes speed for the device being controlled (Arm or Base, not both simultaneously).
   
+</details>
 
 
 # Usage
