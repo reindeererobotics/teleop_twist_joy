@@ -126,7 +126,7 @@ teleop_twist_joy_node:
     base_axis_angular:  # Left thumb stick horizontal
       yaw: 3
     base_scale_angular:
-      yaw: -0.4
+      yaw: 0.4
     
     toggle_preset_layer_button: 7 # Button to Switch between the A, B, X, Y buttons used for presets
     XYTwist_toggle: 8 # Left joystick button to switch between controlling translation and rotation in the X and Y axes
